@@ -1,0 +1,7 @@
+CREATE TABLE patients (
+    cedula      VARCHAR(20)  PRIMARY KEY,
+    full_name   VARCHAR(200) NOT NULL,
+    last_phone  VARCHAR(30)  NOT NULL,
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

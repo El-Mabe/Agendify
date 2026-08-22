@@ -1,0 +1,43 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:mediagenda;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+  flyway:
+    enabled: false
+  main:
+    allow-bean-definition-overriding: true
+
+google:
+  sheets:
+    enabled: false
+
+whatsapp:
+  api-url: https://graph.facebook.com
+  version: v23.0
+  token: test-token
+  phone-number-id: "000000"
+  verify-token: test-verify
+
+reminder:
+  enabled: true
+  day-before-hour: 0
+  window-end-hour: 23
+  send-mode: INTERACTIVE
+  template-name: cita_recordatorio
+  template-language: es_CO
+  manual-run-token:
+
+attendance-sync:
+  enabled: true
+  window-start-hour: 0
+  window-end-hour: 23
+  manual-run-token:
+
+follow-up:
+  interval-months: 11

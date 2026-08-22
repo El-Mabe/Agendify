@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: mediagenda-bot
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/mediagenda}
+    username: ${DATABASE_USERNAME:mediagenda}
+    password: ${DATABASE_PASSWORD:mediagenda}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: America/Bogota
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+
+whatsapp:
+  api-url: https://graph.facebook.com
+  version: v23.0
+  token: EAAMZC9Blow2IBSLWWRorNHWQUbTlmbqvljSIMjAeInaBYZBfAUaS0eYkZBRNVPpePXmkDW7Xf0gfybsx8LzJjfpHpDE6DclGaC7yErRp32HlIKM4ZAEXmUosxbV8tWP52ZBwox8WRw2ZBm5qHGS5BPZALGDtMBNvYEMNqSqpCabOmK9CMMJjOVvdK5zAQFCTRy3nWKeZA6C2K04BdbZC1JMN3kH1nNihC5xroZCHoMOqZAVsCcSNmK59J0ur8lpSJ7PV084uPoRO5aY1N5wUCI9xbnXYuzI
+  phone-number-id: "1229730536897494"
+  verify-token: mediagenda-local-verify
+
+google:
+  sheets:
+    enabled: ${GOOGLE_SHEETS_ENABLED:false}
+    spreadsheet-id: ${GOOGLE_SHEETS_SPREADSHEET_ID:19-3jfCFAWuF_lnCTv7ZbFuOBjyYchKD_7d2Mhj6BLuQ}
+    credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:C:/Github/mediagenda-bot/secrets/google-service-account.json}
+    holidays-sheet: Festivos
+    information-sheet: Informacion
+    
+logging:
+  level:
+    root: INFO
+    com.ocnilentes: DEBUG
+
+reminder:
+  enabled: ${REMINDER_ENABLED:true}
+  day-before-hour: ${REMINDER_DAY_BEFORE_HOUR:18}
+  window-end-hour: ${REMINDER_WINDOW_END_HOUR:22}
+  cron: "0 */15 18-22 * * *"
+  # INTERACTIVE = botones (requiere ventana 24h). TEMPLATE = plantilla Meta aprobada (proactivo).
+  send-mode: ${REMINDER_SEND_MODE:INTERACTIVE}
+  template-name: ${REMINDER_TEMPLATE_NAME:cita_recordatorio}
+  template-language: ${REMINDER_TEMPLATE_LANGUAGE:es_CO}
+  manual-run-token: ${REMINDER_MANUAL_RUN_TOKEN:}
+
+attendance-sync:
+  enabled: ${ATTENDANCE_SYNC_ENABLED:true}
+  window-start-hour: ${ATTENDANCE_SYNC_START_HOUR:20}
+  window-end-hour: ${ATTENDANCE_SYNC_END_HOUR:22}
+  cron: "0 */15 20-22 * * *"
+  manual-run-token: ${ATTENDANCE_SYNC_MANUAL_RUN_TOKEN:}
+
+follow-up:
+  interval-months: ${FOLLOW_UP_INTERVAL_MONTHS:11}

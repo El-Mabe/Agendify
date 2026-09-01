@@ -2,9 +2,11 @@ spring:
   application:
     name: mediagenda-bot
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/mediagenda}
-    username: ${DATABASE_USERNAME:mediagenda}
-    password: ${DATABASE_PASSWORD:mediagenda}
+    # Railway inyecta PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE al referenciar el servicio Postgres.
+    # Localmente (sin perfil) usa los defaults; con perfil `local` aplica application-local.yml.
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:mediagenda}
+    username: ${PGUSER:mediagenda}
+    password: ${PGPASSWORD:mediagenda}
   jpa:
     open-in-view: false
     hibernate:
@@ -17,14 +19,14 @@ spring:
     enabled: true
 
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 whatsapp:
   api-url: https://graph.facebook.com
   version: v23.0
-  token: EAAMZC9Blow2IBSLWWRorNHWQUbTlmbqvljSIMjAeInaBYZBfAUaS0eYkZBRNVPpePXmkDW7Xf0gfybsx8LzJjfpHpDE6DclGaC7yErRp32HlIKM4ZAEXmUosxbV8tWP52ZBwox8WRw2ZBm5qHGS5BPZALGDtMBNvYEMNqSqpCabOmK9CMMJjOVvdK5zAQFCTRy3nWKeZA6C2K04BdbZC1JMN3kH1nNihC5xroZCHoMOqZAVsCcSNmK59J0ur8lpSJ7PV084uPoRO5aY1N5wUCI9xbnXYuzI
-  phone-number-id: "1229730536897494"
-  verify-token: mediagenda-local-verify
+  token: ${WHATSAPP_TOKEN:}
+  phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+  verify-token: ${WHATSAPP_VERIFY_TOKEN:}
 
 google:
   sheets:

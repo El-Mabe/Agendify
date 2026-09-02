@@ -7,6 +7,7 @@ public record GoogleSheetsProperties(
         boolean enabled,
         String spreadsheetId,
         String credentialsPath,
+        String credentialsJson,
         String appointmentsSheet,
         String holidaysSheet,
         String informationSheet

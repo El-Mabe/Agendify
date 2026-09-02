@@ -31,8 +31,11 @@ whatsapp:
 google:
   sheets:
     enabled: ${GOOGLE_SHEETS_ENABLED:false}
-    spreadsheet-id: ${GOOGLE_SHEETS_SPREADSHEET_ID:19-3jfCFAWuF_lnCTv7ZbFuOBjyYchKD_7d2Mhj6BLuQ}
-    credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:C:/Github/mediagenda-bot/secrets/google-service-account.json}
+    spreadsheet-id: ${GOOGLE_SHEETS_SPREADSHEET_ID:}
+    # Railway/producción: pega el JSON completo en GOOGLE_SHEETS_CREDENTIALS_JSON
+    credentials-json: ${GOOGLE_SHEETS_CREDENTIALS_JSON:}
+    # Local: ruta al archivo JSON (perfil local en application-local.yml)
+    credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:}
     holidays-sheet: Festivos
     information-sheet: Informacion
     

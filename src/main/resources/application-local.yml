@@ -13,6 +13,7 @@ google:
   sheets:
     enabled: ${GOOGLE_SHEETS_ENABLED:false}
     spreadsheet-id: ${GOOGLE_SHEETS_SPREADSHEET_ID:19-3jfCFAWuF_lnCTv7ZbFuOBjyYchKD_7d2Mhj6BLuQ}
+    credentials-json: ${GOOGLE_SHEETS_CREDENTIALS_JSON:}
     credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:C:/Github/mediagenda-bot/secrets/mediagenda-504015-90a7963d6cc7.json}
     holidays-sheet: Festivos
     information-sheet: Informacion

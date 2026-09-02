@@ -18,12 +18,17 @@ public class AppointmentPersistenceConfig {
     @Bean
     @ConditionalOnProperty(prefix = "google.sheets", name = "enabled", havingValue = "true")
     GoogleAccessTokenProvider googleAccessTokenProvider(GoogleSheetsProperties properties) {
-        if (!StringUtils.hasText(properties.credentialsPath()) || !StringUtils.hasText(properties.spreadsheetId())) {
+        if (!StringUtils.hasText(properties.spreadsheetId()) || !hasCredentials(properties)) {
             throw new IllegalStateException(
-                    "google.sheets.spreadsheet-id and credentials-path are required when google.sheets.enabled=true"
+                    "google.sheets.spreadsheet-id and credentials (credentials-json or credentials-path) "
+                            + "are required when google.sheets.enabled=true"
             );
         }
         return new GoogleAccessTokenProvider(properties);
+    }
+
+    private boolean hasCredentials(GoogleSheetsProperties properties) {
+        return StringUtils.hasText(properties.credentialsJson()) || StringUtils.hasText(properties.credentialsPath());
     }
 
     @Bean

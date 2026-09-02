@@ -3,9 +3,11 @@ package com.ocnilentes.mediagenda.shared.outbound.google;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.ocnilentes.mediagenda.shared.config.GoogleSheetsProperties;
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -18,7 +20,7 @@ public class GoogleAccessTokenProvider {
     private final GoogleCredentials credentials;
 
     public GoogleAccessTokenProvider(GoogleSheetsProperties properties) {
-        this.credentials = loadCredentials(properties.credentialsPath()).createScoped(List.of(SHEETS_SCOPE));
+        this.credentials = loadCredentials(properties).createScoped(List.of(SHEETS_SCOPE));
     }
 
     public String getAccessToken() {
@@ -33,11 +35,30 @@ public class GoogleAccessTokenProvider {
         }
     }
 
-    private GoogleCredentials loadCredentials(String credentialsPath) {
-        if (!StringUtils.hasText(credentialsPath)) {
-            throw new GoogleSheetsException("google.sheets.credentials-path is not configured");
+    private GoogleCredentials loadCredentials(GoogleSheetsProperties properties) {
+        if (StringUtils.hasText(properties.credentialsJson())) {
+            return loadFromJson(properties.credentialsJson());
         }
 
+        if (StringUtils.hasText(properties.credentialsPath())) {
+            return loadFromFile(properties.credentialsPath());
+        }
+
+        throw new GoogleSheetsException(
+                "Configure google.sheets.credentials-json (GOOGLE_SHEETS_CREDENTIALS_JSON) "
+                        + "or google.sheets.credentials-path (GOOGLE_SHEETS_CREDENTIALS_PATH)"
+        );
+    }
+
+    private GoogleCredentials loadFromJson(String credentialsJson) {
+        try (InputStream inputStream = new ByteArrayInputStream(credentialsJson.getBytes(StandardCharsets.UTF_8))) {
+            return ServiceAccountCredentials.fromStream(inputStream);
+        } catch (IOException exception) {
+            throw new GoogleSheetsException("Failed to load Google service account credentials from JSON", exception);
+        }
+    }
+
+    private GoogleCredentials loadFromFile(String credentialsPath) {
         Path path = Path.of(credentialsPath);
         if (!Files.exists(path)) {
             throw new GoogleSheetsException("Google credentials file not found: " + credentialsPath);

@@ -1,11 +1,26 @@
+# syntax=docker/dockerfile:1
+
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 
+COPY docker/maven-settings.xml /root/.m2/settings.xml
 COPY pom.xml ./
-RUN mvn -B -DskipTests dependency:go-offline
+
+RUN --mount=type=cache,target=/root/.m2/repository \
+    bash -c 'for attempt in 1 2 3 4 5; do \
+      mvn -B -DskipTests dependency:go-offline && exit 0; \
+      echo "Maven dependency:go-offline attempt ${attempt} failed, retrying in 30s..."; \
+      sleep 30; \
+    done; exit 1'
 
 COPY src ./src
-RUN mvn -B -DskipTests package
+
+RUN --mount=type=cache,target=/root/.m2/repository \
+    bash -c 'for attempt in 1 2 3 4 5; do \
+      mvn -B -DskipTests package && exit 0; \
+      echo "Maven package attempt ${attempt} failed, retrying in 30s..."; \
+      sleep 30; \
+    done; exit 1'
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

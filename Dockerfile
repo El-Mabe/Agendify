@@ -6,8 +6,7 @@ WORKDIR /app
 COPY docker/maven-settings.xml /root/.m2/settings.xml
 COPY pom.xml ./
 
-RUN --mount=type=cache,id=m2-cache,target=/root/.m2/repository \
-    bash -c 'for attempt in 1 2 3 4 5; do \
+RUN bash -c 'for attempt in 1 2 3 4 5; do \
       mvn -B -DskipTests dependency:go-offline && exit 0; \
       echo "Maven dependency:go-offline attempt ${attempt} failed, retrying in 30s..."; \
       sleep 30; \
@@ -15,8 +14,7 @@ RUN --mount=type=cache,id=m2-cache,target=/root/.m2/repository \
 
 COPY src ./src
 
-RUN --mount=type=cache,id=m2-cache,target=/root/.m2/repository \
-    bash -c 'for attempt in 1 2 3 4 5; do \
+RUN bash -c 'for attempt in 1 2 3 4 5; do \
       mvn -B -DskipTests package && exit 0; \
       echo "Maven package attempt ${attempt} failed, retrying in 30s..."; \
       sleep 30; \

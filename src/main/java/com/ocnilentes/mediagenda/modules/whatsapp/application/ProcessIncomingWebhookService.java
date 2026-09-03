@@ -3,14 +3,14 @@ package com.ocnilentes.mediagenda.modules.whatsapp.application;
 import com.ocnilentes.mediagenda.modules.reminder.application.ReminderResponseService;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.IncomingButtonReply;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.IncomingTextMessage;
-import com.ocnilentes.mediagenda.modules.whatsapp.inbound.webhook.MetaWebhookPayload;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 @Service
 public class ProcessIncomingWebhookService {
@@ -19,6 +19,7 @@ public class ProcessIncomingWebhookService {
 
     private final ConversationService conversationService;
     private final ReminderResponseService reminderResponseService;
+    private final JsonMapper jsonMapper;
 
     public ProcessIncomingWebhookService(
             ConversationService conversationService,
@@ -26,10 +27,17 @@ public class ProcessIncomingWebhookService {
     ) {
         this.conversationService = conversationService;
         this.reminderResponseService = reminderResponseService;
+        this.jsonMapper = JsonMapper.builder().build();
     }
 
-    public List<IncomingTextMessage> process(MetaWebhookPayload payload) {
-        List<IncomingButtonReply> buttonReplies = extractButtonReplies(payload);
+    public void processRaw(String rawBody) {
+        if (!StringUtils.hasText(rawBody)) {
+            log.debug("Webhook received with empty body");
+            return;
+        }
+
+        JsonNode root = jsonMapper.readTree(rawBody);
+        List<IncomingButtonReply> buttonReplies = extractButtonReplies(root);
         for (IncomingButtonReply reply : buttonReplies) {
             log.info(
                     "Incoming WhatsApp button id={} from={} buttonId='{}' title='{}'",
@@ -41,7 +49,7 @@ public class ProcessIncomingWebhookService {
             reminderResponseService.handle(reply);
         }
 
-        List<IncomingTextMessage> messages = extractTextMessages(payload);
+        List<IncomingTextMessage> messages = extractTextMessages(root);
         for (IncomingTextMessage message : messages) {
             log.info(
                     "Incoming WhatsApp message id={} from={} text='{}'",
@@ -55,90 +63,60 @@ public class ProcessIncomingWebhookService {
         if (messages.isEmpty() && buttonReplies.isEmpty()) {
             log.debug("Webhook received without text/button messages (status update or unsupported type)");
         }
-
-        return messages;
     }
 
-    private List<IncomingTextMessage> extractTextMessages(MetaWebhookPayload payload) {
+    private List<IncomingTextMessage> extractTextMessages(JsonNode root) {
         List<IncomingTextMessage> result = new ArrayList<>();
 
-        if (payload == null || CollectionUtils.isEmpty(payload.entry())) {
-            return result;
-        }
+        for (JsonNode changeValue : changeValues(root)) {
+            String phoneNumberId = textOrNull(changeValue.path("metadata").path("phone_number_id"));
 
-        for (MetaWebhookPayload.Entry entry : payload.entry()) {
-            if (CollectionUtils.isEmpty(entry.changes())) {
-                continue;
-            }
-
-            for (MetaWebhookPayload.Change change : entry.changes()) {
-                MetaWebhookPayload.Value value = change.value();
-                if (value == null || CollectionUtils.isEmpty(value.messages())) {
+            for (JsonNode message : iterable(changeValue.path("messages"))) {
+                if (!isTextMessage(message)) {
                     continue;
                 }
 
-                String phoneNumberId = value.metadata() != null ? value.metadata().phoneNumberId() : null;
-
-                for (MetaWebhookPayload.Message message : value.messages()) {
-                    if (!isTextMessage(message)) {
-                        continue;
-                    }
-
-                    String sender = resolveSender(message, value);
-                    if (!StringUtils.hasText(sender)) {
-                        log.warn(
-                                "Ignoring WhatsApp text message without sender id={} type={}",
-                                message.id(),
-                                message.type()
-                        );
-                        continue;
-                    }
-
-                    result.add(new IncomingTextMessage(
-                            message.id(),
-                            sender,
-                            message.text().body(),
-                            message.timestamp(),
-                            phoneNumberId
-                    ));
+                String sender = resolveSender(message, changeValue);
+                if (!StringUtils.hasText(sender)) {
+                    log.warn(
+                            "Ignoring WhatsApp text message without sender id={} type={} messageJson={} contactWaIds={}",
+                            textOrNull(message.path("id")),
+                            textOrNull(message.path("type")),
+                            message,
+                            contactWaIds(changeValue)
+                    );
+                    continue;
                 }
+
+                result.add(new IncomingTextMessage(
+                        textOrNull(message.path("id")),
+                        WhatsappPhoneNormalizer.normalize(sender),
+                        textOrNull(message.path("text").path("body")),
+                        textOrNull(message.path("timestamp")),
+                        phoneNumberId
+                ));
             }
         }
 
         return result;
     }
 
-    private List<IncomingButtonReply> extractButtonReplies(MetaWebhookPayload payload) {
+    private List<IncomingButtonReply> extractButtonReplies(JsonNode root) {
         List<IncomingButtonReply> result = new ArrayList<>();
 
-        if (payload == null || CollectionUtils.isEmpty(payload.entry())) {
-            return result;
-        }
+        for (JsonNode changeValue : changeValues(root)) {
+            String phoneNumberId = textOrNull(changeValue.path("metadata").path("phone_number_id"));
 
-        for (MetaWebhookPayload.Entry entry : payload.entry()) {
-            if (CollectionUtils.isEmpty(entry.changes())) {
-                continue;
-            }
-
-            for (MetaWebhookPayload.Change change : entry.changes()) {
-                MetaWebhookPayload.Value value = change.value();
-                if (value == null || CollectionUtils.isEmpty(value.messages())) {
-                    continue;
-                }
-
-                String phoneNumberId = value.metadata() != null ? value.metadata().phoneNumberId() : null;
-
-                for (MetaWebhookPayload.Message message : value.messages()) {
-                    IncomingButtonReply reply = toButtonReply(message, value, phoneNumberId);
-                    if (reply != null) {
-                        result.add(reply);
-                    } else if (!isTextMessage(message)) {
-                        log.debug(
-                                "Ignoring unsupported WhatsApp message type={} id={}",
-                                message.type(),
-                                message.id()
-                        );
-                    }
+            for (JsonNode message : iterable(changeValue.path("messages"))) {
+                IncomingButtonReply reply = toButtonReply(message, changeValue, phoneNumberId);
+                if (reply != null) {
+                    result.add(reply);
+                } else if (!isTextMessage(message)) {
+                    log.debug(
+                            "Ignoring unsupported WhatsApp message type={} id={}",
+                            textOrNull(message.path("type")),
+                            textOrNull(message.path("id"))
+                    );
                 }
             }
         }
@@ -146,41 +124,39 @@ public class ProcessIncomingWebhookService {
         return result;
     }
 
-    private IncomingButtonReply toButtonReply(
-            MetaWebhookPayload.Message message,
-            MetaWebhookPayload.Value value,
-            String phoneNumberId
-    ) {
-        if (message == null || !StringUtils.hasText(message.type())) {
+    private IncomingButtonReply toButtonReply(JsonNode message, JsonNode changeValue, String phoneNumberId) {
+        String type = textOrNull(message.path("type"));
+        if (!StringUtils.hasText(type)) {
             return null;
         }
 
-        String sender = resolveSender(message, value);
+        String sender = resolveSender(message, changeValue);
         if (!StringUtils.hasText(sender)) {
             return null;
         }
 
-        if ("interactive".equalsIgnoreCase(message.type())
-                && message.interactive() != null
-                && message.interactive().buttonReply() != null) {
-            MetaWebhookPayload.ButtonReply buttonReply = message.interactive().buttonReply();
+        String normalizedSender = WhatsappPhoneNormalizer.normalize(sender);
+
+        if ("interactive".equalsIgnoreCase(type) && message.path("interactive").has("button_reply")) {
+            JsonNode buttonReply = message.path("interactive").path("button_reply");
             return new IncomingButtonReply(
-                    message.id(),
-                    sender,
-                    buttonReply.id(),
-                    buttonReply.title(),
-                    message.timestamp(),
+                    textOrNull(message.path("id")),
+                    normalizedSender,
+                    textOrNull(buttonReply.path("id")),
+                    textOrNull(buttonReply.path("title")),
+                    textOrNull(message.path("timestamp")),
                     phoneNumberId
             );
         }
 
-        if ("button".equalsIgnoreCase(message.type()) && message.button() != null) {
+        if ("button".equalsIgnoreCase(type) && message.has("button")) {
+            JsonNode button = message.path("button");
             return new IncomingButtonReply(
-                    message.id(),
-                    sender,
-                    message.button().payload(),
-                    message.button().text(),
-                    message.timestamp(),
+                    textOrNull(message.path("id")),
+                    normalizedSender,
+                    textOrNull(button.path("payload")),
+                    textOrNull(button.path("text")),
+                    textOrNull(message.path("timestamp")),
                     phoneNumberId
             );
         }
@@ -188,26 +164,68 @@ public class ProcessIncomingWebhookService {
         return null;
     }
 
-    private String resolveSender(MetaWebhookPayload.Message message, MetaWebhookPayload.Value value) {
-        if (message != null && StringUtils.hasText(message.from())) {
-            return message.from();
+    private String resolveSender(JsonNode message, JsonNode changeValue) {
+        String from = textOrNull(message.path("from"));
+        if (StringUtils.hasText(from)) {
+            return from;
         }
 
-        if (value != null && !CollectionUtils.isEmpty(value.contacts())) {
-            for (MetaWebhookPayload.Contact contact : value.contacts()) {
-                if (contact != null && StringUtils.hasText(contact.waId())) {
-                    return contact.waId();
-                }
+        for (JsonNode contact : iterable(changeValue.path("contacts"))) {
+            String waId = textOrNull(contact.path("wa_id"));
+            if (StringUtils.hasText(waId)) {
+                return waId;
             }
         }
 
         return null;
     }
 
-    private boolean isTextMessage(MetaWebhookPayload.Message message) {
-        return message != null
-                && "text".equalsIgnoreCase(message.type())
-                && message.text() != null
-                && StringUtils.hasText(message.text().body());
+    private List<String> contactWaIds(JsonNode changeValue) {
+        List<String> ids = new ArrayList<>();
+        for (JsonNode contact : iterable(changeValue.path("contacts"))) {
+            String waId = textOrNull(contact.path("wa_id"));
+            if (StringUtils.hasText(waId)) {
+                ids.add(waId);
+            }
+        }
+        return ids;
+    }
+
+    private List<JsonNode> changeValues(JsonNode root) {
+        List<JsonNode> values = new ArrayList<>();
+        for (JsonNode entry : iterable(root.path("entry"))) {
+            for (JsonNode change : iterable(entry.path("changes"))) {
+                JsonNode value = change.path("value");
+                if (!value.isMissingNode() && !value.isNull()) {
+                    values.add(value);
+                }
+            }
+        }
+        return values;
+    }
+
+    private boolean isTextMessage(JsonNode message) {
+        return "text".equalsIgnoreCase(textOrNull(message.path("type")))
+                && StringUtils.hasText(textOrNull(message.path("text").path("body")));
+    }
+
+    private String textOrNull(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (!node.isValueNode()) {
+            return null;
+        }
+        String text = node.asString("");
+        return StringUtils.hasText(text) ? text.trim() : null;
+    }
+
+    private Iterable<JsonNode> iterable(JsonNode node) {
+        if (node == null || !node.isArray() || node.isEmpty()) {
+            return List.of();
+        }
+        List<JsonNode> values = new ArrayList<>();
+        node.forEach(values::add);
+        return values;
     }
 }

@@ -56,7 +56,7 @@ public record MetaWebhookPayload(
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Message(
-            String from,
+            @JsonProperty("from") String from,
             String id,
             String timestamp,
             String type,

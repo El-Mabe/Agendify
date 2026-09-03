@@ -23,6 +23,7 @@ public class WhatsappWebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WhatsappWebhookController.class);
     private static final String SUBSCRIBE_MODE = "subscribe";
+    private static final int RAW_PAYLOAD_LOG_LIMIT = 4000;
 
     private final WhatsappProperties whatsappProperties;
     private final ProcessIncomingWebhookService processIncomingWebhookService;
@@ -62,11 +63,14 @@ public class WhatsappWebhookController {
     }
 
     @PostMapping
-    public ResponseEntity<Void> receive(@RequestBody(required = false) MetaWebhookPayload payload) {
+    public ResponseEntity<Void> receive(@RequestBody(required = false) String rawBody) {
         log.info("Webhook POST received");
+        if (StringUtils.hasText(rawBody)) {
+            log.info("Webhook raw payload={}", truncate(rawBody));
+        }
 
         try {
-            processIncomingWebhookService.process(payload);
+            processIncomingWebhookService.processRaw(rawBody);
         } catch (WhatsappApiException exception) {
             log.error(
                     "Failed to process WhatsApp webhook payload: status={} body={}",
@@ -86,5 +90,12 @@ public class WhatsappWebhookController {
             return null;
         }
         return value.trim();
+    }
+
+    private String truncate(String value) {
+        if (value.length() <= RAW_PAYLOAD_LOG_LIMIT) {
+            return value;
+        }
+        return value.substring(0, RAW_PAYLOAD_LOG_LIMIT) + "...(truncated)";
     }
 }

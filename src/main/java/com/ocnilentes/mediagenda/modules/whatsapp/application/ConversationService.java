@@ -68,8 +68,16 @@ public class ConversationService {
     }
 
     public void handle(IncomingTextMessage message) {
-        if (message == null || !processedMessageIds.add(message.messageId())) {
-            log.debug("Skipping already processed message id={}", message == null ? null : message.messageId());
+        if (message == null || !StringUtils.hasText(message.from())) {
+            log.warn(
+                    "Skipping WhatsApp message without sender phone id={}",
+                    message == null ? null : message.messageId()
+            );
+            return;
+        }
+
+        if (!processedMessageIds.add(message.messageId())) {
+            log.debug("Skipping already processed message id={}", message.messageId());
             return;
         }
 

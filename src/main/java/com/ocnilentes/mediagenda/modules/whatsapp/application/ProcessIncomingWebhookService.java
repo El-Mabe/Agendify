@@ -84,9 +84,19 @@ public class ProcessIncomingWebhookService {
                         continue;
                     }
 
+                    String sender = resolveSender(message, value);
+                    if (!StringUtils.hasText(sender)) {
+                        log.warn(
+                                "Ignoring WhatsApp text message without sender id={} type={}",
+                                message.id(),
+                                message.type()
+                        );
+                        continue;
+                    }
+
                     result.add(new IncomingTextMessage(
                             message.id(),
-                            message.from(),
+                            sender,
                             message.text().body(),
                             message.timestamp(),
                             phoneNumberId
@@ -119,7 +129,7 @@ public class ProcessIncomingWebhookService {
                 String phoneNumberId = value.metadata() != null ? value.metadata().phoneNumberId() : null;
 
                 for (MetaWebhookPayload.Message message : value.messages()) {
-                    IncomingButtonReply reply = toButtonReply(message, phoneNumberId);
+                    IncomingButtonReply reply = toButtonReply(message, value, phoneNumberId);
                     if (reply != null) {
                         result.add(reply);
                     } else if (!isTextMessage(message)) {
@@ -136,8 +146,17 @@ public class ProcessIncomingWebhookService {
         return result;
     }
 
-    private IncomingButtonReply toButtonReply(MetaWebhookPayload.Message message, String phoneNumberId) {
+    private IncomingButtonReply toButtonReply(
+            MetaWebhookPayload.Message message,
+            MetaWebhookPayload.Value value,
+            String phoneNumberId
+    ) {
         if (message == null || !StringUtils.hasText(message.type())) {
+            return null;
+        }
+
+        String sender = resolveSender(message, value);
+        if (!StringUtils.hasText(sender)) {
             return null;
         }
 
@@ -147,7 +166,7 @@ public class ProcessIncomingWebhookService {
             MetaWebhookPayload.ButtonReply buttonReply = message.interactive().buttonReply();
             return new IncomingButtonReply(
                     message.id(),
-                    message.from(),
+                    sender,
                     buttonReply.id(),
                     buttonReply.title(),
                     message.timestamp(),
@@ -158,12 +177,28 @@ public class ProcessIncomingWebhookService {
         if ("button".equalsIgnoreCase(message.type()) && message.button() != null) {
             return new IncomingButtonReply(
                     message.id(),
-                    message.from(),
+                    sender,
                     message.button().payload(),
                     message.button().text(),
                     message.timestamp(),
                     phoneNumberId
             );
+        }
+
+        return null;
+    }
+
+    private String resolveSender(MetaWebhookPayload.Message message, MetaWebhookPayload.Value value) {
+        if (message != null && StringUtils.hasText(message.from())) {
+            return message.from();
+        }
+
+        if (value != null && !CollectionUtils.isEmpty(value.contacts())) {
+            for (MetaWebhookPayload.Contact contact : value.contacts()) {
+                if (contact != null && StringUtils.hasText(contact.waId())) {
+                    return contact.waId();
+                }
+            }
         }
 
         return null;

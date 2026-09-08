@@ -2,7 +2,6 @@ package com.ocnilentes.mediagenda.modules.whatsapp.inbound.rest;
 
 import com.ocnilentes.mediagenda.modules.whatsapp.application.ProcessIncomingWebhookService;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.exception.WhatsappApiException;
-import com.ocnilentes.mediagenda.modules.whatsapp.inbound.webhook.MetaWebhookPayload;
 import com.ocnilentes.mediagenda.shared.config.WhatsappProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.JsonNode;
 
 @RestController
 @RequestMapping("/api/v1/whatsapp/webhook")
@@ -63,14 +63,14 @@ public class WhatsappWebhookController {
     }
 
     @PostMapping
-    public ResponseEntity<Void> receive(@RequestBody(required = false) String rawBody) {
+    public ResponseEntity<Void> receive(@RequestBody(required = false) JsonNode payload) {
         log.info("Webhook POST received");
-        if (StringUtils.hasText(rawBody)) {
-            log.info("Webhook raw payload={}", truncate(rawBody));
+        if (payload != null && !payload.isNull() && !payload.isMissingNode()) {
+            log.info("Webhook payload={}", truncate(payload.toString()));
         }
 
         try {
-            processIncomingWebhookService.processRaw(rawBody);
+            processIncomingWebhookService.process(payload);
         } catch (WhatsappApiException exception) {
             log.error(
                     "Failed to process WhatsApp webhook payload: status={} body={}",

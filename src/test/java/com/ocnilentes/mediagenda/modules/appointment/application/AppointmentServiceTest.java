@@ -120,6 +120,33 @@ class AppointmentServiceTest {
         );
     }
 
+    @Test
+    void shouldRejectSecondAppointmentSameDayForSameCedula() {
+        LocalDate date = nextWeekday(LocalDate.now(ZONE).plusDays(1));
+
+        appointmentService.schedule(
+                "573043370408",
+                "Julian",
+                "1234567890",
+                date,
+                LocalTime.of(9, 0)
+        );
+
+        AppointmentException exception = assertThrows(
+                AppointmentException.class,
+                () -> appointmentService.schedule(
+                        "573043370408",
+                        "Julian",
+                        "1234567890",
+                        date,
+                        LocalTime.of(11, 0)
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("Ya tienes una cita reservada para ese día"));
+        assertEquals(1, appointmentService.listByCedula("1234567890").size());
+    }
+
     private LocalDate nextWeekday(LocalDate start) {
         LocalDate date = start;
         while (date.getDayOfWeek() == DayOfWeek.SUNDAY) {

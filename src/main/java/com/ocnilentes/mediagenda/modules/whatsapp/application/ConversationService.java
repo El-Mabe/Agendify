@@ -213,6 +213,18 @@ public class ConversationService {
         }
 
         LocalDate date = session.dateOptions().get(selected - 1);
+        Optional<Appointment> existingSameDay = appointmentService.listByCedula(session.cedula()).stream()
+                .filter(appointment -> appointment.date().equals(date))
+                .findFirst();
+        if (existingSameDay.isPresent()) {
+            Appointment existing = existingSameDay.get();
+            return "😊 Ya tienes una cita reservada para ese día a las "
+                    + existing.time().format(TIME_FORMAT)
+                    + ". Para poder atenderte de la mejor manera, solo puedes tener una cita por día.\n\n"
+                    + "Puedes elegir otra fecha con gusto:\n\n"
+                    + formatDateOptions(session.dateOptions());
+        }
+
         List<LocalTime> times = appointmentService.listAvailableTimes(date);
         if (times.isEmpty()) {
             return "Esa fecha ya no tiene horarios. Elige otra:\n\n" + formatDateOptions(session.dateOptions());

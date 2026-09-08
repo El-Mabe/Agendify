@@ -1,6 +1,9 @@
 package com.ocnilentes.mediagenda.modules.whatsapp.inbound.rest;
 
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -104,5 +107,7 @@ class WhatsappWebhookControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isOk());
+
+        verify(whatsappMessageClient, timeout(2000)).sendTextMessage(eq("573043370408"), anyString());
     }
 }

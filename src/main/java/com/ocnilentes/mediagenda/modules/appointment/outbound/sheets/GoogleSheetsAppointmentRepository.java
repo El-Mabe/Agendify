@@ -18,15 +18,26 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 
 public class GoogleSheetsAppointmentRepository implements AppointmentRepository {
 
+    private static final Logger log = LoggerFactory.getLogger(GoogleSheetsAppointmentRepository.class);
     private static final long HOLIDAYS_CACHE_TTL_MS = Duration.ofMinutes(15).toMillis();
+    private static final long SHEET_CACHE_TTL_MS = Duration.ofMinutes(2).toMillis();
 
     private final GoogleSheetsApiClient sheetsApiClient;
     private final String holidaysSheet;
-    private final Map<String, List<List<Object>>> sheetCache = new ConcurrentHashMap<>();
+
+    private record CachedSheet(List<List<Object>> data, long expiresAtMs) {
+        boolean isExpired() {
+            return System.currentTimeMillis() >= expiresAtMs;
+        }
+    }
+
+    private final Map<String, CachedSheet> sheetCache = new ConcurrentHashMap<>();
     private final Object holidaysLock = new Object();
     private volatile Set<LocalDate> holidaysCache = Set.of();
     private volatile long holidaysCacheExpiresAtMs;
@@ -267,17 +278,27 @@ public class GoogleSheetsAppointmentRepository implements AppointmentRepository 
     }
 
     private Optional<List<List<Object>>> loadSheetOptional(String sheetName) {
-        if (sheetCache.containsKey(sheetName)) {
-            return Optional.of(sheetCache.get(sheetName));
+        CachedSheet cached = sheetCache.get(sheetName);
+        if (cached != null && !cached.isExpired()) {
+            return Optional.of(cached.data());
         }
+
         try {
+            log.debug("Reading sheet from Google Sheets API: {}", sheetName);
             List<List<Object>> values = sheetsApiClient.getValues(sheetName + "!A1:F");
-            sheetCache.put(sheetName, values);
+            sheetCache.put(sheetName, new CachedSheet(values, System.currentTimeMillis() + SHEET_CACHE_TTL_MS));
             return Optional.of(values);
         } catch (GoogleSheetsException exception) {
             String body = exception.getMessage() == null ? "" : exception.getMessage();
             if (body.contains("Unable to parse range") || body.contains("404") || body.contains("not found")) {
                 return Optional.empty();
+            }
+            // En 429 devolver caché vieja si existe, en lugar de propagar el error
+            if (body.contains("429") || body.contains("RATE_LIMIT") || body.contains("RESOURCE_EXHAUSTED")) {
+                log.warn("Google Sheets rate limit for sheet={}, using stale cache={}", sheetName, cached != null);
+                if (cached != null) {
+                    return Optional.of(cached.data());
+                }
             }
             throw exception;
         }

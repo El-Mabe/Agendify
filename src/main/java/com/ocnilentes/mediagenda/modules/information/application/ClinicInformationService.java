@@ -41,9 +41,12 @@ public class ClinicInformationService {
     private static final Map<String, String> DEFAULT_INFO = Map.of(
             "mensaje", DEFAULT_MESSAGE
     );
+    private static final long INFO_CACHE_TTL_MS = java.time.Duration.ofMinutes(10).toMillis();
 
     private final ObjectProvider<GoogleSheetsApiClient> sheetsApiClientProvider;
     private final GoogleSheetsProperties properties;
+    private volatile Map<String, String> cachedInfo;
+    private volatile long infoCacheExpiresAtMs;
 
     public ClinicInformationService(
             ObjectProvider<GoogleSheetsApiClient> sheetsApiClientProvider,
@@ -54,12 +57,23 @@ public class ClinicInformationService {
     }
 
     public String buildInformationMessage() {
-        Map<String, String> info = loadInformation();
+        Map<String, String> info = loadInformationCached();
         String mensaje = info.get("mensaje");
         if (StringUtils.hasText(mensaje)) {
             return mensaje.trim();
         }
         return DEFAULT_MESSAGE;
+    }
+
+    private Map<String, String> loadInformationCached() {
+        long now = System.currentTimeMillis();
+        if (cachedInfo != null && now < infoCacheExpiresAtMs) {
+            return cachedInfo;
+        }
+        Map<String, String> info = loadInformation();
+        cachedInfo = info;
+        infoCacheExpiresAtMs = now + INFO_CACHE_TTL_MS;
+        return info;
     }
 
     private Map<String, String> loadInformation() {

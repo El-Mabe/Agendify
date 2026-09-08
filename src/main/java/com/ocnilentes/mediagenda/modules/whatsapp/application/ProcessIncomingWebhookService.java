@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 
 @Service
 public class ProcessIncomingWebhookService {
@@ -19,7 +18,6 @@ public class ProcessIncomingWebhookService {
 
     private final ConversationService conversationService;
     private final ReminderResponseService reminderResponseService;
-    private final JsonMapper jsonMapper;
 
     public ProcessIncomingWebhookService(
             ConversationService conversationService,
@@ -27,16 +25,14 @@ public class ProcessIncomingWebhookService {
     ) {
         this.conversationService = conversationService;
         this.reminderResponseService = reminderResponseService;
-        this.jsonMapper = JsonMapper.builder().build();
     }
 
-    public void processRaw(String rawBody) {
-        if (!StringUtils.hasText(rawBody)) {
+    public void process(JsonNode root) {
+        if (root == null || root.isNull() || root.isMissingNode()) {
             log.debug("Webhook received with empty body");
             return;
         }
 
-        JsonNode root = jsonMapper.readTree(rawBody);
         List<IncomingButtonReply> buttonReplies = extractButtonReplies(root);
         for (IncomingButtonReply reply : buttonReplies) {
             log.info(
@@ -61,8 +57,44 @@ public class ProcessIncomingWebhookService {
         }
 
         if (messages.isEmpty() && buttonReplies.isEmpty()) {
-            log.debug("Webhook received without text/button messages (status update or unsupported type)");
+            log.info(
+                    "Webhook without text/button messages statuses={} messageTypes={} contacts={}",
+                    statusIds(root),
+                    messageTypes(root),
+                    contactWaIdsFromRoot(root)
+            );
         }
+    }
+
+    private List<String> statusIds(JsonNode root) {
+        List<String> ids = new ArrayList<>();
+        for (JsonNode changeValue : changeValues(root)) {
+            for (JsonNode status : iterable(changeValue.path("statuses"))) {
+                String id = textOrNull(status.path("id"));
+                String statusValue = textOrNull(status.path("status"));
+                String recipient = textOrNull(status.path("recipient_id"));
+                ids.add(statusValue + ":" + recipient + ":" + id);
+            }
+        }
+        return ids;
+    }
+
+    private List<String> messageTypes(JsonNode root) {
+        List<String> types = new ArrayList<>();
+        for (JsonNode changeValue : changeValues(root)) {
+            for (JsonNode message : iterable(changeValue.path("messages"))) {
+                types.add(textOrNull(message.path("type")));
+            }
+        }
+        return types;
+    }
+
+    private List<String> contactWaIdsFromRoot(JsonNode root) {
+        List<String> ids = new ArrayList<>();
+        for (JsonNode changeValue : changeValues(root)) {
+            ids.addAll(contactWaIds(changeValue));
+        }
+        return ids;
     }
 
     private List<IncomingTextMessage> extractTextMessages(JsonNode root) {

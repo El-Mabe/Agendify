@@ -13,10 +13,12 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ import org.springframework.util.StringUtils;
 public class AppointmentService {
 
     private static final ZoneId CLINIC_ZONE = ZoneId.of("America/Bogota");
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
     private static final int MAX_AVAILABLE_DATES = 5;
     private static final int MAX_SEARCH_DAYS = 60;
 
@@ -83,6 +86,19 @@ public class AppointmentService {
         LocalDate today = LocalDate.now(CLINIC_ZONE);
         if (!date.isAfter(today)) {
             throw new AppointmentException("No se pueden agendar citas para hoy. Elige una fecha a partir de mañana.");
+        }
+
+        Optional<Appointment> existingSameDay = appointmentRepository.findByCedula(normalizedCedula).stream()
+                .filter(appointment -> appointment.date().equals(date))
+                .findFirst();
+        if (existingSameDay.isPresent()) {
+            Appointment existing = existingSameDay.get();
+            throw new AppointmentException(
+                    "😊 Ya tienes una cita reservada para ese día a las "
+                            + existing.time().format(TIME_FORMAT)
+                            + ". Para poder atenderte de la mejor manera, solo puedes tener una cita por día. "
+                            + "Puedes elegir otra fecha con gusto."
+            );
         }
 
         Set<LocalDate> holidays = appointmentRepository.findHolidays();

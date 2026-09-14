@@ -213,9 +213,8 @@ public class ConversationService {
         }
 
         LocalDate date = session.dateOptions().get(selected - 1);
-        Optional<Appointment> existingSameDay = appointmentService.listByCedula(session.cedula()).stream()
-                .filter(appointment -> appointment.date().equals(date))
-                .findFirst();
+        Optional<Appointment> existingSameDay =
+                appointmentService.findByCedulaAndDate(session.cedula(), date);
         if (existingSameDay.isPresent()) {
             Appointment existing = existingSameDay.get();
             return "😊 Ya tienes una cita reservada para ese día a las "

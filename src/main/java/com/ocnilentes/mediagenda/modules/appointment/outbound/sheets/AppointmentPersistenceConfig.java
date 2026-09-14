@@ -1,11 +1,8 @@
 package com.ocnilentes.mediagenda.modules.appointment.outbound.sheets;
 
-import com.ocnilentes.mediagenda.modules.appointment.domain.port.AppointmentRepository;
-import com.ocnilentes.mediagenda.modules.appointment.outbound.memory.InMemoryAppointmentRepository;
 import com.ocnilentes.mediagenda.shared.config.GoogleSheetsProperties;
 import com.ocnilentes.mediagenda.shared.outbound.google.GoogleAccessTokenProvider;
 import com.ocnilentes.mediagenda.shared.outbound.google.GoogleSheetsApiClient;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,10 +15,11 @@ public class AppointmentPersistenceConfig {
     @Bean
     @ConditionalOnProperty(prefix = "google.sheets", name = "enabled", havingValue = "true")
     GoogleAccessTokenProvider googleAccessTokenProvider(GoogleSheetsProperties properties) {
-        if (!StringUtils.hasText(properties.spreadsheetId()) || !hasCredentials(properties)) {
+        if (!properties.hasOperationalSpreadsheet() || !hasCredentials(properties)) {
             throw new IllegalStateException(
-                    "google.sheets.spreadsheet-id and credentials (credentials-json or credentials-path) "
-                            + "are required when google.sheets.enabled=true"
+                    "When google.sheets.enabled=true configure credentials and either "
+                            + "google.sheets.spreadsheet-id (legacy) or both "
+                            + "spreadsheet-id-a and spreadsheet-id-b"
             );
         }
         return new GoogleAccessTokenProvider(properties);
@@ -33,25 +31,7 @@ public class AppointmentPersistenceConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "google.sheets", name = "enabled", havingValue = "true")
-    GoogleSheetsApiClient googleSheetsApiClient(
-            GoogleAccessTokenProvider tokenProvider,
-            GoogleSheetsProperties properties
-    ) {
-        return new GoogleSheetsApiClient(RestClient.builder(), tokenProvider, properties.spreadsheetId());
-    }
-
-    @Bean
-    @ConditionalOnProperty(prefix = "google.sheets", name = "enabled", havingValue = "true")
-    AppointmentRepository googleSheetsAppointmentRepository(
-            GoogleSheetsApiClient googleSheetsApiClient,
-            GoogleSheetsProperties properties
-    ) {
-        return new GoogleSheetsAppointmentRepository(googleSheetsApiClient, properties);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(AppointmentRepository.class)
-    AppointmentRepository inMemoryAppointmentRepository() {
-        return new InMemoryAppointmentRepository();
+    GoogleSheetsApiClient googleSheetsApiClient(GoogleAccessTokenProvider tokenProvider) {
+        return new GoogleSheetsApiClient(RestClient.builder(), tokenProvider);
     }
 }

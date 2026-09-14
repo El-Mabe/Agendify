@@ -31,13 +31,30 @@ whatsapp:
 google:
   sheets:
     enabled: ${GOOGLE_SHEETS_ENABLED:false}
+    # Legacy (un solo archivo con pestañas A_ y B_). Preferir A/B separados.
     spreadsheet-id: ${GOOGLE_SHEETS_SPREADSHEET_ID:}
+    spreadsheet-id-a: ${GOOGLE_SHEETS_SPREADSHEET_ID_A:}
+    spreadsheet-id-b: ${GOOGLE_SHEETS_SPREADSHEET_ID_B:}
+    # Festivos + Informacion. Si vacío, usa A o el legacy.
+    spreadsheet-id-shared: ${GOOGLE_SHEETS_SPREADSHEET_ID_SHARED:}
     # Railway/producción: pega el JSON completo en GOOGLE_SHEETS_CREDENTIALS_JSON
     credentials-json: ${GOOGLE_SHEETS_CREDENTIALS_JSON:}
     # Local: ruta al archivo JSON (perfil local en application-local.yml)
     credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:}
     holidays-sheet: Festivos
     information-sheet: Informacion
+
+appointments:
+  sheet-sync:
+    enabled: ${APPOINTMENT_SHEET_SYNC_ENABLED:${GOOGLE_SHEETS_ENABLED:false}}
+    webhook-token: ${APPOINTMENT_SHEET_SYNC_TOKEN:}
+    bootstrap-enabled: ${APPOINTMENT_SHEET_BOOTSTRAP_ENABLED:false}
+    bootstrap-months-back: ${APPOINTMENT_SHEET_BOOTSTRAP_MONTHS_BACK:1}
+    bootstrap-months-forward: ${APPOINTMENT_SHEET_BOOTSTRAP_MONTHS_FORWARD:3}
+    reconciliation-enabled: ${APPOINTMENT_SHEET_RECONCILIATION_ENABLED:false}
+    reconciliation-months-forward: ${APPOINTMENT_SHEET_RECONCILIATION_MONTHS_FORWARD:1}
+    reconciliation-delay-ms: ${APPOINTMENT_SHEET_RECONCILIATION_DELAY_MS:600000}
+    retry-delay-ms: ${APPOINTMENT_SHEET_RETRY_DELAY_MS:60000}
     
 logging:
   level:

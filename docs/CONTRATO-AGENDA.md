@@ -5,16 +5,15 @@ Objetivo: convivir en el mismo Google Spreadsheet sin pelear formatos.
 
 ## 1. Principio
 
-La **grilla visual** (hora → paciente) es la fuente de verdad que ve el humano.  
-El bot lee y escribe **en las mismas celdas**, con reglas fijas.
+PostgreSQL es la fuente operativa de verdad. Cada consultorio trabaja en **su propio
+Google Spreadsheet**. La grilla visual es la proyección humana; los cambios se envían
+al backend mediante Apps Script.
 
 ```text
-Recepcionista / Doctoras     Bot WhatsApp
-         \                     /
-          \                   /
-           ▼                 ▼
-        Misma pestaña A_yyyy_MM o B_yyyy_MM
-        Misma fila de hora del día
+Recepción A → Spreadsheet A → Apps Script → PostgreSQL ← Bot WhatsApp
+Recepción B → Spreadsheet B → Apps Script → PostgreSQL
+Festivos/Info → Spreadsheet compartido (opcional)
+PostgreSQL → espejo asíncrono → Spreadsheet A o B según consultorio
 ```
 
 - Celda de paciente vacía → horario libre  
@@ -25,21 +24,19 @@ Da igual quién lo escribió.
 
 ## 2. Estructura del Spreadsheet
 
-| Pestaña | Quién la usa | Propósito |
-|---------|--------------|-----------|
-| `A_yyyy_MM` | Doctora A, recepción, bot | Agenda visual consultorio A del mes |
-| `B_yyyy_MM` | Doctora B, recepción, bot | Agenda visual consultorio B del mes |
-| `Festivos` | Recepción | Fechas no bookables (`yyyy-MM-dd`) |
-| `Informacion` | Bot (opción 3) | Textos del consultorio |
-| `Instrucciones` | Todos | Este contrato resumido |
+| Archivo | Pestaña | Quién la usa | Propósito |
+|---------|---------|--------------|-----------|
+| Spreadsheet A | `A_yyyy_MM` | Doctora A, recepción A | Agenda visual consultorio A |
+| Spreadsheet B | `B_yyyy_MM` | Doctora B, recepción B | Agenda visual consultorio B |
+| Shared (o A) | `Festivos` | Recepción | Fechas no bookables (`yyyy-MM-dd`) |
+| Shared (o A) | `Informacion` | Bot (opción 3) | Textos del consultorio |
 
-Ejemplos de nombres válidos:
+Ejemplos de nombres válidos de pestaña:
 
-- `A_2026_08`
-- `B_2026_08`
-- `A_2026_09`
+- `A_2026_08` (solo en el archivo A)
+- `B_2026_08` (solo en el archivo B)
 
-**No renombrar** con otros formatos (`Agosto A`, `A agosto`, etc.). El bot no los encontrará.
+**No mezclar** pestañas B dentro del archivo A (ni viceversa).
 
 ---
 
@@ -60,9 +57,12 @@ Cada día es un bloque con esta forma exacta:
 
 ### 3.2 Fila de encabezados (justo debajo)
 
-| A | B | C | D | E | F |
-|---|---|---|---|---|---|
-| HORA | NOMBRE | CEDULA | TELEFONO | OBSERVACION | ASISTENCIA |
+| A | B | C | D | E | F | G |
+|---|---|---|---|---|---|---|
+| HORA | NOMBRE | CEDULA | TELEFONO | OBSERVACION | ASISTENCIA | APPOINTMENT_ID |
+
+La columna **G** debe permanecer oculta y no debe editarse manualmente. Contiene el UUID
+estable que evita confundir una cita cuando se mueve o reutiliza una fila.
 
 ### 3.3 Filas de horarios (20 minutos)
 
@@ -130,7 +130,7 @@ Al cancelar:
 1. Pedir cédula al usuario
 2. Buscar en A y B (rango de meses) filas con esa `CEDULA`
 3. Mostrar lista al paciente
-4. Limpiar `NOMBRE`, `CEDULA`, `TELEFONO`, `OBSERVACION`, `ASISTENCIA` de esa fila  
+4. Limpiar `NOMBRE`, `CEDULA`, `TELEFONO`, `OBSERVACION`, `ASISTENCIA`, `APPOINTMENT_ID` de esa fila
    (no borrar la fila de la hora)
 
 ---

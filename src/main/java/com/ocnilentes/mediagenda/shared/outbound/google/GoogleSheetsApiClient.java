@@ -1,12 +1,14 @@
 package com.ocnilentes.mediagenda.shared.outbound.google;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriUtils;
@@ -19,22 +21,20 @@ public class GoogleSheetsApiClient {
 
     private final RestClient restClient;
     private final GoogleAccessTokenProvider tokenProvider;
-    private final String spreadsheetId;
 
     public GoogleSheetsApiClient(
             RestClient.Builder restClientBuilder,
-            GoogleAccessTokenProvider tokenProvider,
-            String spreadsheetId
+            GoogleAccessTokenProvider tokenProvider
     ) {
         this.restClient = restClientBuilder
                 .baseUrl("https://sheets.googleapis.com/v4")
                 .build();
         this.tokenProvider = tokenProvider;
-        this.spreadsheetId = spreadsheetId;
     }
 
     @SuppressWarnings("unchecked")
-    public List<List<Object>> getValues(String range) {
+    public List<List<Object>> getValues(String spreadsheetId, String range) {
+        requireSpreadsheetId(spreadsheetId);
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
                 Map<String, Object> response = restClient.get()
@@ -51,7 +51,7 @@ public class GoogleSheetsApiClient {
                 return (List<List<Object>>) response.get("values");
             } catch (RestClientResponseException exception) {
                 if (isRateLimited(exception) && attempt < MAX_RETRIES) {
-                    sleepBeforeRetry(attempt, range);
+                    sleepBeforeRetry(attempt, spreadsheetId, range);
                     continue;
                 }
                 throw new GoogleSheetsException(
@@ -63,7 +63,8 @@ public class GoogleSheetsApiClient {
         return List.of();
     }
 
-    public void appendValues(String range, List<List<Object>> values) {
+    public void appendValues(String spreadsheetId, String range, List<List<Object>> values) {
+        requireSpreadsheetId(spreadsheetId);
         try {
             String encodedRange = UriUtils.encodePath(range, StandardCharsets.UTF_8);
             restClient.post()
@@ -85,7 +86,8 @@ public class GoogleSheetsApiClient {
         }
     }
 
-    public void updateValues(String range, List<List<Object>> values) {
+    public void updateValues(String spreadsheetId, String range, List<List<Object>> values) {
+        requireSpreadsheetId(spreadsheetId);
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
                 String encodedRange = UriUtils.encodePath(range, StandardCharsets.UTF_8);
@@ -102,7 +104,7 @@ public class GoogleSheetsApiClient {
                 return;
             } catch (RestClientResponseException exception) {
                 if (isRateLimited(exception) && attempt < MAX_RETRIES) {
-                    sleepBeforeRetry(attempt, range);
+                    sleepBeforeRetry(attempt, spreadsheetId, range);
                     continue;
                 }
                 throw new GoogleSheetsException(
@@ -113,13 +115,53 @@ public class GoogleSheetsApiClient {
         }
     }
 
+    public void batchUpdateValues(String spreadsheetId, Map<String, List<List<Object>>> valuesByRange) {
+        requireSpreadsheetId(spreadsheetId);
+        if (valuesByRange == null || valuesByRange.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> data = new ArrayList<>();
+        valuesByRange.forEach((range, values) ->
+                data.add(Map.of("range", range, "values", values))
+        );
+        try {
+            restClient.post()
+                    .uri("/spreadsheets/{spreadsheetId}/values:batchUpdate", spreadsheetId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.getAccessToken())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "valueInputOption", "RAW",
+                            "data", data
+                    ))
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientResponseException exception) {
+            throw new GoogleSheetsException(
+                    "Google Sheets batchUpdateValues failed: " + exception.getResponseBodyAsString(),
+                    exception
+            );
+        }
+    }
+
+    private void requireSpreadsheetId(String spreadsheetId) {
+        if (!StringUtils.hasText(spreadsheetId)) {
+            throw new GoogleSheetsException("spreadsheetId is required");
+        }
+    }
+
     private boolean isRateLimited(RestClientResponseException exception) {
         return exception.getStatusCode().value() == 429;
     }
 
-    private void sleepBeforeRetry(int attempt, String range) {
+    private void sleepBeforeRetry(int attempt, String spreadsheetId, String range) {
         long delay = RETRY_BASE_DELAY_MS * attempt;
-        log.warn("Google Sheets 429 rate limit on range={}, retrying in {}ms (attempt {})", range, delay, attempt);
+        log.warn(
+                "Google Sheets 429 rate limit on spreadsheet={} range={}, retrying in {}ms (attempt {})",
+                spreadsheetId,
+                range,
+                delay,
+                attempt
+        );
         try {
             Thread.sleep(delay);
         } catch (InterruptedException interrupted) {

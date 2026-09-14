@@ -220,6 +220,67 @@ Bot: pide nombre → lista hasta 5 fechas → lista horas → agenda
 - [x] Lectura/escritura en celdas de hora (convivencia con recepción)
 - [x] Festivos desde pestaña `Festivos`
 
+## Persistencia de citas y sincronización con Google Sheets
+
+PostgreSQL es la fuente operativa de las citas. El bot consulta disponibilidad, citas por
+cédula y citas por fecha en la base de datos, por lo que una conversación no necesita leer
+las pestañas de agenda de Google Sheets.
+
+Google Sheets se mantiene como interfaz para recepción:
+
+- Las citas creadas, canceladas o confirmadas por el bot se encolan y se reflejan de forma
+  asíncrona en Sheets.
+- Si Google devuelve un error o un `429`, la operación queda pendiente y se reintenta.
+- Los cambios manuales de recepción llegan al backend mediante el Apps Script
+  `docs/google-sheets-appointment-sync.gs`.
+- Al iniciar y cada 10 minutos se reconcilian únicamente los meses configurados.
+
+Variables de Railway:
+
+```text
+GOOGLE_SHEETS_ENABLED=true
+GOOGLE_SHEETS_SPREADSHEET_ID_A=<id-archivo-consultorio-A>
+GOOGLE_SHEETS_SPREADSHEET_ID_B=<id-archivo-consultorio-B>
+GOOGLE_SHEETS_SPREADSHEET_ID_SHARED=<id-opcional-festivos-info>
+GOOGLE_SHEETS_CREDENTIALS_JSON=<json-service-account>
+APPOINTMENT_SHEET_SYNC_ENABLED=true
+APPOINTMENT_SHEET_SYNC_TOKEN=<secreto-largo-y-aleatorio>
+APPOINTMENT_SHEET_BOOTSTRAP_ENABLED=false
+APPOINTMENT_SHEET_BOOTSTRAP_MONTHS_BACK=1
+APPOINTMENT_SHEET_BOOTSTRAP_MONTHS_FORWARD=3
+APPOINTMENT_SHEET_RECONCILIATION_ENABLED=false
+APPOINTMENT_SHEET_RECONCILIATION_MONTHS_FORWARD=1
+APPOINTMENT_SHEET_RECONCILIATION_DELAY_MS=600000
+APPOINTMENT_SHEET_RETRY_DELAY_MS=60000
+```
+
+Cada consultorio usa su propio Google Spreadsheet. Genera el año con
+`docs/google-sheets-year-generator.gs` (`CONSULTORIO='A'` o `'B'`).
+Instala `docs/google-sheets-appointment-sync.gs` en **ambos** archivos y configura:
+
+- `MEDIAGENDA_API_URL`
+- `SHEET_SYNC_TOKEN`
+- `CONSULTORIO=A` o `CONSULTORIO=B`
+
+Comparte los 3 archivos (A, B y shared) con la service account (Editor).
+
+Si aún usas un solo archivo legacy, puedes dejar solo `GOOGLE_SHEETS_SPREADSHEET_ID`.
+
+Después del primer despliegue se puede ejecutar una reconciliación manual:
+
+```bash
+curl -X POST \
+  "https://tu-servicio.up.railway.app/api/v1/admin/appointments/sheets/import?monthsBack=1&monthsForward=3&reconcileDeletes=false" \
+  -H "X-Sheet-Sync-Token: <APPOINTMENT_SHEET_SYNC_TOKEN>"
+```
+
+La respuesta separa registros creados, actualizados, sin cambios, cancelados y fallidos.
+La importación y la reconciliación destructiva quedan deshabilitadas por defecto: Sheets no
+puede cancelar automáticamente una cita válida en PostgreSQL. Mantén habilitado el activador
+de edición; activa la reconciliación periódica solo si aceptas incorporar cambios de Sheets.
+Festivos e información clínica también se copian a PostgreSQL para evitar lecturas durante
+las conversaciones.
+
 #### Flujo de agendar
 
 ```text

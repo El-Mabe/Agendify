@@ -1,12 +1,9 @@
 package com.ocnilentes.mediagenda.modules.information.application;
 
-import com.ocnilentes.mediagenda.shared.config.GoogleSheetsProperties;
-import com.ocnilentes.mediagenda.shared.outbound.google.GoogleSheetsApiClient;
+import com.ocnilentes.mediagenda.modules.information.outbound.persistence.ClinicInformationJpaEntity;
+import com.ocnilentes.mediagenda.modules.information.outbound.persistence.SpringDataClinicInformationRepository;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -41,23 +38,15 @@ public class ClinicInformationService {
     private static final Map<String, String> DEFAULT_INFO = Map.of(
             "mensaje", DEFAULT_MESSAGE
     );
-    private static final long INFO_CACHE_TTL_MS = java.time.Duration.ofMinutes(10).toMillis();
 
-    private final ObjectProvider<GoogleSheetsApiClient> sheetsApiClientProvider;
-    private final GoogleSheetsProperties properties;
-    private volatile Map<String, String> cachedInfo;
-    private volatile long infoCacheExpiresAtMs;
+    private final SpringDataClinicInformationRepository informationRepository;
 
-    public ClinicInformationService(
-            ObjectProvider<GoogleSheetsApiClient> sheetsApiClientProvider,
-            GoogleSheetsProperties properties
-    ) {
-        this.sheetsApiClientProvider = sheetsApiClientProvider;
-        this.properties = properties;
+    public ClinicInformationService(SpringDataClinicInformationRepository informationRepository) {
+        this.informationRepository = informationRepository;
     }
 
     public String buildInformationMessage() {
-        Map<String, String> info = loadInformationCached();
+        Map<String, String> info = loadInformation();
         String mensaje = info.get("mensaje");
         if (StringUtils.hasText(mensaje)) {
             return mensaje.trim();
@@ -65,43 +54,13 @@ public class ClinicInformationService {
         return DEFAULT_MESSAGE;
     }
 
-    private Map<String, String> loadInformationCached() {
-        long now = System.currentTimeMillis();
-        if (cachedInfo != null && now < infoCacheExpiresAtMs) {
-            return cachedInfo;
-        }
-        Map<String, String> info = loadInformation();
-        cachedInfo = info;
-        infoCacheExpiresAtMs = now + INFO_CACHE_TTL_MS;
-        return info;
-    }
-
     private Map<String, String> loadInformation() {
-        GoogleSheetsApiClient client = sheetsApiClientProvider.getIfAvailable();
-        if (client == null || !properties.enabled()) {
-            return DEFAULT_INFO;
-        }
-
-        try {
-            String sheet = StringUtils.hasText(properties.informationSheet())
-                    ? properties.informationSheet()
-                    : "Informacion";
-            List<List<Object>> values = client.getValues(sheet + "!A2:B");
-            Map<String, String> info = new LinkedHashMap<>(DEFAULT_INFO);
-
-            for (List<Object> row : values) {
-                if (row == null || row.size() < 2) {
-                    continue;
-                }
-                String key = Optional.ofNullable(row.get(0)).map(Object::toString).orElse("").trim().toLowerCase();
-                String value = Optional.ofNullable(row.get(1)).map(Object::toString).orElse("").trim();
-                if (StringUtils.hasText(key) && StringUtils.hasText(value)) {
-                    info.put(key, value);
-                }
+        Map<String, String> info = new LinkedHashMap<>(DEFAULT_INFO);
+        for (ClinicInformationJpaEntity entry : informationRepository.findAll()) {
+            if (StringUtils.hasText(entry.getKey()) && StringUtils.hasText(entry.getValue())) {
+                info.put(entry.getKey().trim().toLowerCase(), entry.getValue().trim());
             }
-            return info;
-        } catch (Exception exception) {
-            return DEFAULT_INFO;
         }
+        return info;
     }
 }

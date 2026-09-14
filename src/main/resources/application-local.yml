@@ -5,14 +5,17 @@ spring:
     password: mediagenda
 
 whatsapp:
-  token: EAAMZC9Blow2IBSE1n7eTOzbhG7C7I156VcillaObZBALiQZCEWEOT2Um3WaJw8VNdLMeYLR5X3y9aVHYNrDbfTGlHzJ9tpfik8Bjcoh1oUdLoF8QszQ3wyG9C3mTaW8gE2BBbbHSYN4na94SeJnryaEIM8HcoCjlhMSUP4ZAZBKwyc3TEanspnK73L2X6aSfGw7xkgcA0y4hInwZBXd9o0EJfkGAtFqDpBjJC4705kuSPDRNPZCYREfQdxSePg6VwlXLs6soKNSj4gSs8aOdD5T5Pei
+  token: ${WHATSAPP_TOKEN:}
   phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
   verify-token: ${WHATSAPP_VERIFY_TOKEN:mediagenda-local-verify}
 
 google:
   sheets:
     enabled: ${GOOGLE_SHEETS_ENABLED:false}
-    spreadsheet-id: ${GOOGLE_SHEETS_SPREADSHEET_ID:19-3jfCFAWuF_lnCTv7ZbFuOBjyYchKD_7d2Mhj6BLuQ}
+    spreadsheet-id: ${GOOGLE_SHEETS_SPREADSHEET_ID:}
+    spreadsheet-id-a: ${GOOGLE_SHEETS_SPREADSHEET_ID_A:}
+    spreadsheet-id-b: ${GOOGLE_SHEETS_SPREADSHEET_ID_B:}
+    spreadsheet-id-shared: ${GOOGLE_SHEETS_SPREADSHEET_ID_SHARED:}
     credentials-json: ${GOOGLE_SHEETS_CREDENTIALS_JSON:}
     credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:C:/Github/mediagenda-bot/secrets/mediagenda-504015-90a7963d6cc7.json}
     holidays-sheet: Festivos

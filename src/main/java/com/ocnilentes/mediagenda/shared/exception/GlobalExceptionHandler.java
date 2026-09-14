@@ -4,10 +4,12 @@ import com.ocnilentes.mediagenda.shared.response.ApiErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -33,6 +35,22 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, "BAD_REQUEST", exception.getMessage(), request);
     }
 
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiErrorResponse> handleResponseStatus(
+            ResponseStatusException exception,
+            HttpServletRequest request
+    ) {
+        String message = exception.getReason() == null
+                ? "Request rejected"
+                : exception.getReason();
+        return buildResponse(
+                exception.getStatusCode(),
+                "HTTP_" + exception.getStatusCode().value(),
+                message,
+                request
+        );
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpected(
             Exception exception,
@@ -50,7 +68,7 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ApiErrorResponse> buildResponse(
-            HttpStatus status,
+            HttpStatusCode status,
             String code,
             String message,
             HttpServletRequest request

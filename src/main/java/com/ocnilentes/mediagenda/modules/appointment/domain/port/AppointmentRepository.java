@@ -16,7 +16,11 @@ public interface AppointmentRepository {
 
     List<Appointment> findByCedula(String cedula);
 
+    Optional<Appointment> findByCedulaAndDate(String cedula, LocalDate date);
+
     List<Appointment> findByDate(LocalDate date);
+
+    List<Appointment> findByAsistencia(String asistencia);
 
     Optional<Appointment> findById(String id);
 

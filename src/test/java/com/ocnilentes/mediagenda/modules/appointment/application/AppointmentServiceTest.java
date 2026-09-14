@@ -20,6 +20,11 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,13 +34,19 @@ class AppointmentServiceTest {
 
     private InMemoryAppointmentRepository repository;
     private AppointmentEventService appointmentEventService;
+    private AppointmentSheetSyncService appointmentSheetSyncService;
     private AppointmentService appointmentService;
 
     @BeforeEach
     void setUp() {
         repository = new InMemoryAppointmentRepository();
         appointmentEventService = mock(AppointmentEventService.class);
-        appointmentService = new AppointmentService(repository, appointmentEventService);
+        appointmentSheetSyncService = mock(AppointmentSheetSyncService.class);
+        appointmentService = new AppointmentService(
+                repository,
+                appointmentEventService,
+                appointmentSheetSyncService
+        );
     }
 
     @Test
@@ -145,6 +156,49 @@ class AppointmentServiceTest {
 
         assertTrue(exception.getMessage().contains("Ya tienes una cita reservada para ese día"));
         assertEquals(1, appointmentService.listByCedula("1234567890").size());
+    }
+
+    @Test
+    void shouldKeepOnlyOneAppointmentWhenSameCedulaBooksConcurrently() throws Exception {
+        LocalDate date = nextWeekday(LocalDate.now(ZONE).plusDays(1));
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger successes = new AtomicInteger();
+        AtomicInteger rejected = new AtomicInteger();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        executor.submit(() -> scheduleConcurrently(start, successes, rejected, date, LocalTime.of(9, 0)));
+        executor.submit(() -> scheduleConcurrently(start, successes, rejected, date, LocalTime.of(10, 0)));
+        start.countDown();
+        executor.shutdown();
+
+        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+        assertEquals(1, successes.get());
+        assertEquals(1, rejected.get());
+        assertEquals(1, appointmentService.listByCedula("1234567890").size());
+    }
+
+    private void scheduleConcurrently(
+            CountDownLatch start,
+            AtomicInteger successes,
+            AtomicInteger rejected,
+            LocalDate date,
+            LocalTime time
+    ) {
+        try {
+            start.await();
+            appointmentService.schedule(
+                    "573043370408",
+                    "Julian",
+                    "1234567890",
+                    date,
+                    time
+            );
+            successes.incrementAndGet();
+        } catch (AppointmentException exception) {
+            rejected.incrementAndGet();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private LocalDate nextWeekday(LocalDate start) {

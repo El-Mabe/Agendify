@@ -1,5 +1,6 @@
 package com.ocnilentes.mediagenda.modules.appointment.outbound.memory;
 
+import com.ocnilentes.mediagenda.modules.appointment.domain.exception.AppointmentException;
 import com.ocnilentes.mediagenda.modules.appointment.domain.model.Appointment;
 import com.ocnilentes.mediagenda.modules.appointment.domain.model.Consultorio;
 import com.ocnilentes.mediagenda.modules.appointment.domain.port.AppointmentRepository;
@@ -18,7 +19,23 @@ public class InMemoryAppointmentRepository implements AppointmentRepository {
     private final Set<LocalDate> holidays = ConcurrentHashMap.newKeySet();
 
     @Override
-    public Appointment save(Appointment appointment) {
+    public synchronized Appointment save(Appointment appointment) {
+        boolean samePatientAndDay = appointments.values().stream().anyMatch(existing ->
+                appointment.cedula() != null
+                        && appointment.cedula().equals(existing.cedula())
+                        && appointment.date().equals(existing.date())
+        );
+        if (samePatientAndDay) {
+            throw new AppointmentException("Solo se permite una cita por cédula y día.");
+        }
+        boolean occupiedSlot = appointments.values().stream().anyMatch(existing ->
+                appointment.date().equals(existing.date())
+                        && appointment.time().equals(existing.time())
+                        && appointment.consultorio() == existing.consultorio()
+        );
+        if (occupiedSlot) {
+            throw new AppointmentException("Ese horario acabó de ocuparse. Elige otra hora.");
+        }
         appointments.put(appointment.id(), appointment);
         return appointment;
     }
@@ -46,6 +63,14 @@ public class InMemoryAppointmentRepository implements AppointmentRepository {
     }
 
     @Override
+    public Optional<Appointment> findByCedulaAndDate(String cedula, LocalDate date) {
+        return appointments.values().stream()
+                .filter(appointment -> cedula != null && cedula.equals(appointment.cedula()))
+                .filter(appointment -> date != null && date.equals(appointment.date()))
+                .findFirst();
+    }
+
+    @Override
     public List<Appointment> findByDate(LocalDate date) {
         List<Appointment> result = new ArrayList<>();
         for (Appointment appointment : appointments.values()) {
@@ -54,6 +79,13 @@ public class InMemoryAppointmentRepository implements AppointmentRepository {
             }
         }
         return result;
+    }
+
+    @Override
+    public List<Appointment> findByAsistencia(String asistencia) {
+        return appointments.values().stream()
+                .filter(appointment -> asistencia != null && asistencia.equals(appointment.asistencia()))
+                .toList();
     }
 
     @Override

@@ -42,5 +42,9 @@ class VisualAgendaSheetParserTest {
         assertEquals("1234567890", appointments.getFirst().cedula());
         assertEquals("CONFIRMO", appointments.getFirst().asistencia());
         assertFalse(VisualAgendaSheetParser.isOccupied("ALMUERZO", ""));
+        assertTrue(VisualAgendaSheetParser.hasValidAgendaStructure(rows));
+        assertFalse(VisualAgendaSheetParser.hasValidAgendaStructure(List.of(
+                List.of("DIA", "fecha-invalida")
+        )));
     }
 }

@@ -99,7 +99,9 @@ final class VisualAgendaSheetParser {
             }
 
             appointments.add(new Appointment(
-                    syntheticId(consultorio, currentDate, time.get()),
+                    StringUtils.hasText(text(row, 6))
+                            ? text(row, 6)
+                            : syntheticId(consultorio, currentDate, time.get()),
                     currentDate,
                     time.get(),
                     consultorio,
@@ -125,6 +127,11 @@ final class VisualAgendaSheetParser {
 
     static boolean isDayMarker(List<Object> row) {
         return "DIA".equalsIgnoreCase(text(row, 0));
+    }
+
+    static boolean hasValidAgendaStructure(List<List<Object>> rows) {
+        return rows != null && rows.stream()
+                .anyMatch(row -> isDayMarker(row) && parseDate(text(row, 1)).isPresent());
     }
 
     private static Integer findDayMarkerIndex(List<List<Object>> rows, LocalDate date) {

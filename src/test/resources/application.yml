@@ -17,6 +17,12 @@ google:
   sheets:
     enabled: false
 
+appointments:
+  sheet-sync:
+    enabled: false
+    bootstrap-enabled: false
+    reconciliation-enabled: false
+
 whatsapp:
   api-url: https://graph.facebook.com
   version: v23.0

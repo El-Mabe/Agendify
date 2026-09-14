@@ -32,6 +32,8 @@ public class ConversationService {
     private static final Logger log = LoggerFactory.getLogger(ConversationService.class);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+    /** Horarios antes de esta hora se muestran como mañana; desde aquí, como tarde. */
+    private static final LocalTime AFTERNOON_START = LocalTime.of(13, 0);
 
     private static final String MENU = """
             ¡Hola! Soy Ocnielentes, tu asistente.
@@ -114,6 +116,7 @@ public class ConversationService {
             case AWAITING_CANCEL_CEDULA -> handleCancelCedula(session, text);
             case AWAITING_NAME -> handleName(session, text);
             case AWAITING_DATE_SELECTION -> handleDateSelection(session, text);
+            case AWAITING_TIME_PERIOD_SELECTION -> handleTimePeriodSelection(session, text);
             case AWAITING_TIME_SELECTION -> handleTimeSelection(session, text);
             case AWAITING_CANCEL_SELECTION -> handleCancelSelection(session, text);
             case AWAITING_RESCHEDULE_DECISION -> handleRescheduleDecision(session, text);
@@ -230,13 +233,54 @@ public class ConversationService {
         }
 
         session.dateSelected(date, times);
-        return "Fecha: " + date.format(DATE_FORMAT) + "\n\n" + formatTimeOptions(times);
+        return promptAfterDateSelected(session);
+    }
+
+    private String handleTimePeriodSelection(ConversationSession session, String text) {
+        List<LocalTime> morning = morningTimes(session.availableTimes());
+        List<LocalTime> afternoon = afternoonTimes(session.availableTimes());
+
+        if (morning.isEmpty() && afternoon.isEmpty()) {
+            session.reset();
+            return "Ya no hay horarios para esa fecha.\n\nEscribe *menú* para volver.";
+        }
+
+        // Si solo queda una franja (p. ej. se llenó la otra), saltamos a horarios.
+        if (morning.isEmpty() || afternoon.isEmpty()) {
+            List<LocalTime> only = morning.isEmpty() ? afternoon : morning;
+            String label = morning.isEmpty() ? "tarde" : "mañana";
+            session.timePeriodSelected(only);
+            return "Fecha: " + session.selectedDate().format(DATE_FORMAT) + "\n\n"
+                    + formatTimeOptions(only, label, false);
+        }
+
+        Integer selected = parseOption(text, 2);
+        if (selected == null) {
+            return "Opción inválida.\n\n" + formatPeriodOptions(morning, afternoon);
+        }
+
+        List<LocalTime> chosen = selected == 1 ? morning : afternoon;
+        String label = selected == 1 ? "mañana" : "tarde";
+        session.timePeriodSelected(chosen);
+        return "Fecha: " + session.selectedDate().format(DATE_FORMAT) + "\n\n"
+                + formatTimeOptions(chosen, label, true);
     }
 
     private String handleTimeSelection(ConversationSession session, String text) {
+        if (isBackCommand(text) && hasBothPeriods(session.availableTimes())) {
+            session.backToTimePeriodSelection();
+            return "Fecha: " + session.selectedDate().format(DATE_FORMAT) + "\n\n"
+                    + formatPeriodOptions(
+                            morningTimes(session.availableTimes()),
+                            afternoonTimes(session.availableTimes())
+                    );
+        }
+
         Integer selected = parseOption(text, session.timeOptions().size());
         if (selected == null) {
-            return "Opción inválida.\n\n" + formatTimeOptions(session.timeOptions());
+            boolean canGoBack = hasBothPeriods(session.availableTimes());
+            String label = inferPeriodLabel(session.timeOptions());
+            return "Opción inválida.\n\n" + formatTimeOptions(session.timeOptions(), label, canGoBack);
         }
 
         LocalTime time = session.timeOptions().get(selected - 1);
@@ -363,8 +407,42 @@ public class ConversationService {
         return builder.toString();
     }
 
-    private String formatTimeOptions(List<LocalTime> times) {
-        StringBuilder builder = new StringBuilder("Elige un horario disponible:\n\n");
+    private String promptAfterDateSelected(ConversationSession session) {
+        List<LocalTime> morning = morningTimes(session.availableTimes());
+        List<LocalTime> afternoon = afternoonTimes(session.availableTimes());
+        String header = "Fecha: " + session.selectedDate().format(DATE_FORMAT) + "\n\n";
+
+        if (!morning.isEmpty() && afternoon.isEmpty()) {
+            session.timePeriodSelected(morning);
+            return header + formatTimeOptions(morning, "mañana", false);
+        }
+        if (morning.isEmpty() && !afternoon.isEmpty()) {
+            session.timePeriodSelected(afternoon);
+            return header + formatTimeOptions(afternoon, "tarde", false);
+        }
+        return header + formatPeriodOptions(morning, afternoon);
+    }
+
+    private String formatPeriodOptions(List<LocalTime> morning, List<LocalTime> afternoon) {
+        return """
+                ¿Prefieres en la mañana o en la tarde?
+
+                1. Mañana (%s - %s)
+                2. Tarde (%s - %s)
+
+                Responde con el número de la opción.
+                """.formatted(
+                morning.getFirst().format(TIME_FORMAT),
+                morning.getLast().format(TIME_FORMAT),
+                afternoon.getFirst().format(TIME_FORMAT),
+                afternoon.getLast().format(TIME_FORMAT)
+        ).trim();
+    }
+
+    private String formatTimeOptions(List<LocalTime> times, String periodLabel, boolean offerBack) {
+        StringBuilder builder = new StringBuilder("Horarios de la ")
+                .append(periodLabel)
+                .append(":\n\n");
         for (int index = 0; index < times.size(); index++) {
             builder.append(index + 1)
                     .append(". ")
@@ -372,7 +450,29 @@ public class ConversationService {
                     .append("\n");
         }
         builder.append("\nResponde con el número de la opción.");
+        if (offerBack) {
+            builder.append("\nEscribe *atrás* para cambiar de franja.");
+        }
         return builder.toString();
+    }
+
+    private List<LocalTime> morningTimes(List<LocalTime> times) {
+        return times.stream().filter(time -> time.isBefore(AFTERNOON_START)).toList();
+    }
+
+    private List<LocalTime> afternoonTimes(List<LocalTime> times) {
+        return times.stream().filter(time -> !time.isBefore(AFTERNOON_START)).toList();
+    }
+
+    private boolean hasBothPeriods(List<LocalTime> times) {
+        return !morningTimes(times).isEmpty() && !afternoonTimes(times).isEmpty();
+    }
+
+    private String inferPeriodLabel(List<LocalTime> times) {
+        if (times.isEmpty()) {
+            return "día";
+        }
+        return times.getFirst().isBefore(AFTERNOON_START) ? "mañana" : "tarde";
     }
 
     private Integer parseOption(String text, int max) {
@@ -385,6 +485,16 @@ public class ConversationService {
         } catch (NumberFormatException exception) {
             return null;
         }
+    }
+
+    private boolean isBackCommand(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        String normalized = text.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("atras")
+                || normalized.equals("atrás")
+                || normalized.equals("volver");
     }
 
     private boolean isMenuCommand(String text) {

@@ -44,8 +44,9 @@ function onAppointmentEdit(event) {
 }
 
 function syncAppointmentRow_(sheet, sheetName, consultorio, row) {
-  const timeValue = sheet.getRange(row, 1).getValue();
-  const time = formatTime_(timeValue);
+  // Usar el texto visible evita el desfase de zona horaria de getValue() (Date).
+  // Ej.: 11:00 en hoja no debe guardarse como 06:00 en Postgres.
+  const time = formatTime_(sheet.getRange(row, 1).getDisplayValue());
   if (!time) {
     return;
   }
@@ -117,7 +118,11 @@ function findDateForRow_(sheet, row) {
 
 function formatTime_(value) {
   if (value instanceof Date) {
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'HH:mm:ss');
+    // Componentes UTC = hora "de pared" que Sheets guarda en celdas de hora.
+    const hh = String(value.getUTCHours()).padStart(2, '0');
+    const mm = String(value.getUTCMinutes()).padStart(2, '0');
+    const ss = String(value.getUTCSeconds()).padStart(2, '0');
+    return hh + ':' + mm + ':' + ss;
   }
   const text = String(value || '').trim();
   const match = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);

@@ -13,6 +13,7 @@ public class ConversationSession {
     private String patientName;
     private LocalDate selectedDate;
     private List<LocalDate> dateOptions;
+    private List<LocalTime> availableTimes;
     private List<LocalTime> timeOptions;
     private List<String> cancelCandidateIds;
 
@@ -45,6 +46,10 @@ public class ConversationSession {
         return dateOptions;
     }
 
+    public List<LocalTime> availableTimes() {
+        return availableTimes;
+    }
+
     public List<LocalTime> timeOptions() {
         return timeOptions;
     }
@@ -59,6 +64,7 @@ public class ConversationSession {
         this.patientName = null;
         this.selectedDate = null;
         this.dateOptions = new ArrayList<>();
+        this.availableTimes = new ArrayList<>();
         this.timeOptions = new ArrayList<>();
         this.cancelCandidateIds = new ArrayList<>();
     }
@@ -91,10 +97,21 @@ public class ConversationSession {
         this.step = ConversationStep.AWAITING_DATE_SELECTION;
     }
 
-    public void dateSelected(LocalDate date, List<LocalTime> timeOptions) {
+    public void dateSelected(LocalDate date, List<LocalTime> availableTimes) {
         this.selectedDate = date;
+        this.availableTimes = new ArrayList<>(availableTimes);
+        this.timeOptions = new ArrayList<>();
+        this.step = ConversationStep.AWAITING_TIME_PERIOD_SELECTION;
+    }
+
+    public void timePeriodSelected(List<LocalTime> timeOptions) {
         this.timeOptions = new ArrayList<>(timeOptions);
         this.step = ConversationStep.AWAITING_TIME_SELECTION;
+    }
+
+    public void backToTimePeriodSelection() {
+        this.timeOptions = new ArrayList<>();
+        this.step = ConversationStep.AWAITING_TIME_PERIOD_SELECTION;
     }
 
     public void startCancelling(String cedula, List<String> candidateIds) {
@@ -102,6 +119,7 @@ public class ConversationSession {
         this.patientName = null;
         this.selectedDate = null;
         this.dateOptions = new ArrayList<>();
+        this.availableTimes = new ArrayList<>();
         this.timeOptions = new ArrayList<>();
         this.cancelCandidateIds = new ArrayList<>(candidateIds);
         this.step = ConversationStep.AWAITING_CANCEL_SELECTION;
@@ -112,6 +130,7 @@ public class ConversationSession {
         this.cedula = cedula;
         this.selectedDate = null;
         this.dateOptions = new ArrayList<>();
+        this.availableTimes = new ArrayList<>();
         this.timeOptions = new ArrayList<>();
         this.cancelCandidateIds = new ArrayList<>();
         this.step = ConversationStep.AWAITING_RESCHEDULE_DECISION;

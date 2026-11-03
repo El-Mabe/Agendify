@@ -243,6 +243,12 @@ reminder:
 
 Ejecución manual (pruebas): `POST /api/v1/internal/reminders/run?force=true`
 
+En modo `TEMPLATE`, la plantilla Meta debe tener **2 botones de respuesta rápida** en este orden:
+1. Confirmar
+2. Cancelar
+
+El bot envía payloads `rc|<appointmentId>` y `rx|<appointmentId>` para asociar la respuesta a la cita.
+
 Sync de asistencia (`ASISTIO` → control 11 meses):
 
 ```yaml

@@ -1,5 +1,6 @@
 package com.ocnilentes.mediagenda.modules.whatsapp.inbound.rest;
 
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.timeout;
@@ -42,6 +43,11 @@ class WhatsappWebhookControllerTest {
     @BeforeEach
     void setUp() {
         when(whatsappMessageClient.sendTextMessage(anyString(), anyString())).thenReturn("wamid.test");
+        when(whatsappMessageClient.sendInteractiveButtons(anyString(), anyString(), anyList()))
+                .thenReturn("wamid.buttons");
+        when(whatsappMessageClient.sendInteractiveList(
+                anyString(), anyString(), anyString(), anyString(), anyList()
+        )).thenReturn("wamid.list");
     }
 
     @Test
@@ -93,6 +99,61 @@ class WhatsappWebhookControllerTest {
                                 "timestamp": "1710000000",
                                 "type": "text",
                                 "text": { "body": "Hola" }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/whatsapp/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        verify(whatsappMessageClient, timeout(2000)).sendTextMessage(eq("573043370408"), anyString());
+    }
+
+    @Test
+    void shouldAcceptIncomingListReplyWebhook() throws Exception {
+        String payload = """
+                {
+                  "object": "whatsapp_business_account",
+                  "entry": [
+                    {
+                      "id": "WABA_ID",
+                      "changes": [
+                        {
+                          "field": "messages",
+                          "value": {
+                            "messaging_product": "whatsapp",
+                            "metadata": {
+                              "display_phone_number": "15551902499",
+                              "phone_number_id": "1229730536897494"
+                            },
+                            "contacts": [
+                              {
+                                "profile": { "name": "Test User" },
+                                "wa_id": "573043370408"
+                              }
+                            ],
+                            "messages": [
+                              {
+                                "from": "573043370408",
+                                "id": "wamid.test-list",
+                                "timestamp": "1710000000",
+                                "type": "interactive",
+                                "interactive": {
+                                  "type": "list_reply",
+                                  "list_reply": {
+                                    "id": "1",
+                                    "title": "Mié 4 nov",
+                                    "description": "04/11/2026"
+                                  }
+                                }
                               }
                             ]
                           }

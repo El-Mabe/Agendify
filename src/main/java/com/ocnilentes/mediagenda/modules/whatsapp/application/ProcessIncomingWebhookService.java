@@ -42,7 +42,20 @@ public class ProcessIncomingWebhookService {
                     reply.buttonId(),
                     reply.buttonTitle()
             );
-            reminderResponseService.handle(reply);
+            if (!reminderResponseService.handle(reply)) {
+                conversationService.handle(toConversationMessage(reply));
+            }
+        }
+
+        List<IncomingTextMessage> listReplies = extractListReplies(root);
+        for (IncomingTextMessage message : listReplies) {
+            log.info(
+                    "Incoming WhatsApp list reply id={} from={} text='{}'",
+                    message.messageId(),
+                    message.from(),
+                    message.text()
+            );
+            conversationService.handle(message);
         }
 
         List<IncomingTextMessage> messages = extractTextMessages(root);
@@ -56,9 +69,9 @@ public class ProcessIncomingWebhookService {
             conversationService.handle(message);
         }
 
-        if (messages.isEmpty() && buttonReplies.isEmpty()) {
+        if (messages.isEmpty() && buttonReplies.isEmpty() && listReplies.isEmpty()) {
             log.info(
-                    "Webhook without text/button messages statuses={} messageTypes={} contacts={}",
+                    "Webhook without text/button/list messages statuses={} messageTypes={} contacts={}",
                     statusIds(root),
                     messageTypes(root),
                     contactWaIdsFromRoot(root)
@@ -143,7 +156,7 @@ public class ProcessIncomingWebhookService {
                 IncomingButtonReply reply = toButtonReply(message, changeValue, phoneNumberId);
                 if (reply != null) {
                     result.add(reply);
-                } else if (!isTextMessage(message)) {
+                } else if (!isTextMessage(message) && !isListReply(message)) {
                     log.debug(
                             "Ignoring unsupported WhatsApp message type={} id={}",
                             textOrNull(message.path("type")),
@@ -196,6 +209,56 @@ public class ProcessIncomingWebhookService {
         return null;
     }
 
+    private List<IncomingTextMessage> extractListReplies(JsonNode root) {
+        List<IncomingTextMessage> result = new ArrayList<>();
+
+        for (JsonNode changeValue : changeValues(root)) {
+            String phoneNumberId = textOrNull(changeValue.path("metadata").path("phone_number_id"));
+
+            for (JsonNode message : iterable(changeValue.path("messages"))) {
+                if (!isListReply(message)) {
+                    continue;
+                }
+
+                String sender = resolveSender(message, changeValue);
+                if (!StringUtils.hasText(sender)) {
+                    log.warn(
+                            "Ignoring WhatsApp list reply without sender id={} messageJson={}",
+                            textOrNull(message.path("id")),
+                            message
+                    );
+                    continue;
+                }
+
+                JsonNode listReply = message.path("interactive").path("list_reply");
+                String option = textOrNull(listReply.path("id"));
+                if (!StringUtils.hasText(option)) {
+                    option = textOrNull(listReply.path("title"));
+                }
+                result.add(new IncomingTextMessage(
+                        textOrNull(message.path("id")),
+                        WhatsappPhoneNormalizer.normalize(sender),
+                        option,
+                        textOrNull(message.path("timestamp")),
+                        phoneNumberId
+                ));
+            }
+        }
+
+        return result;
+    }
+
+    private IncomingTextMessage toConversationMessage(IncomingButtonReply reply) {
+        String text = StringUtils.hasText(reply.buttonId()) ? reply.buttonId() : reply.buttonTitle();
+        return new IncomingTextMessage(
+                reply.messageId(),
+                reply.from(),
+                text,
+                reply.timestamp(),
+                reply.phoneNumberId()
+        );
+    }
+
     private String resolveSender(JsonNode message, JsonNode changeValue) {
         String from = textOrNull(message.path("from"));
         if (StringUtils.hasText(from)) {
@@ -239,6 +302,11 @@ public class ProcessIncomingWebhookService {
     private boolean isTextMessage(JsonNode message) {
         return "text".equalsIgnoreCase(textOrNull(message.path("type")))
                 && StringUtils.hasText(textOrNull(message.path("text").path("body")));
+    }
+
+    private boolean isListReply(JsonNode message) {
+        return "interactive".equalsIgnoreCase(textOrNull(message.path("type")))
+                && message.path("interactive").has("list_reply");
     }
 
     private String textOrNull(JsonNode node) {

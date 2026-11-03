@@ -143,9 +143,12 @@ public class ReminderResponseService {
                 phone,
                 List.of(ReminderStatus.SENT, ReminderStatus.FAILED)
         );
+        // Preferir el recordatorio más reciente en SENT (no el más viejo).
         return open.stream()
-                .sorted(Comparator.comparing(AppointmentReminder::appointmentDate)
-                        .thenComparing(AppointmentReminder::appointmentTime))
+                .sorted(Comparator
+                        .comparing((AppointmentReminder reminder) -> reminder.status() == ReminderStatus.SENT ? 0 : 1)
+                        .thenComparing(AppointmentReminder::appointmentDate, Comparator.reverseOrder())
+                        .thenComparing(AppointmentReminder::appointmentTime, Comparator.reverseOrder()))
                 .findFirst();
     }
 

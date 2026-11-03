@@ -69,6 +69,57 @@ final class VisualAgendaSheetParser {
         return Optional.empty();
     }
 
+    static Optional<SlotLocation> findByAppointmentId(
+            List<List<Object>> rows,
+            LocalDate date,
+            String appointmentId
+    ) {
+        if (!StringUtils.hasText(appointmentId)) {
+            return Optional.empty();
+        }
+        Integer dayStart = findDayMarkerIndex(rows, date);
+        if (dayStart == null) {
+            return Optional.empty();
+        }
+        for (int index = dayStart + 2; index < rows.size(); index++) {
+            List<Object> row = rows.get(index);
+            if (isDayMarker(row) || isBlankRow(row)) {
+                break;
+            }
+            if (appointmentId.trim().equals(text(row, 6))) {
+                return Optional.of(new SlotLocation(index + 1, row));
+            }
+        }
+        return Optional.empty();
+    }
+
+    static Optional<SlotLocation> findByPatientInDay(
+            List<List<Object>> rows,
+            LocalDate date,
+            String cedula,
+            String phone
+    ) {
+        Integer dayStart = findDayMarkerIndex(rows, date);
+        if (dayStart == null) {
+            return Optional.empty();
+        }
+        for (int index = dayStart + 2; index < rows.size(); index++) {
+            List<Object> row = rows.get(index);
+            if (isDayMarker(row) || isBlankRow(row)) {
+                break;
+            }
+            if (!isOccupied(text(row, 1), text(row, 3))) {
+                continue;
+            }
+            boolean sameCedula = StringUtils.hasText(cedula) && cedula.trim().equals(text(row, 2));
+            boolean samePhone = StringUtils.hasText(phone) && phone.trim().equals(text(row, 3));
+            if (sameCedula || samePhone) {
+                return Optional.of(new SlotLocation(index + 1, row));
+            }
+        }
+        return Optional.empty();
+    }
+
     static List<Appointment> findAppointmentsInSheet(
             List<List<Object>> rows,
             Consultorio consultorio

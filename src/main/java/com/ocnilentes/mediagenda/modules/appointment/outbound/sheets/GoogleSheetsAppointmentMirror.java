@@ -5,6 +5,7 @@ import com.ocnilentes.mediagenda.modules.appointment.domain.model.Appointment;
 import com.ocnilentes.mediagenda.shared.config.GoogleSheetsProperties;
 import com.ocnilentes.mediagenda.shared.outbound.google.GoogleSheetsApiClient;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -98,16 +99,43 @@ public class GoogleSheetsAppointmentMirror {
             List<List<Object>> rows,
             Appointment appointment
     ) {
+        // 1) ID dentro del día correcto (evita escribir CONFIRMO en otra fecha si el UUID se repitió).
+        Optional<VisualAgendaSheetParser.SlotLocation> byIdInDay =
+                VisualAgendaSheetParser.findByAppointmentId(rows, appointment.date(), appointment.id());
+        if (byIdInDay.isPresent()) {
+            return byIdInDay.get();
+        }
+
+        // 2) Slot exacto fecha + hora.
+        Optional<VisualAgendaSheetParser.SlotLocation> bySlot =
+                VisualAgendaSheetParser.findSlot(rows, appointment.date(), appointment.time());
+        if (bySlot.isPresent()) {
+            return bySlot.get();
+        }
+
+        // 3) Misma cédula/teléfono en ese día (mitiga desfase de hora 11:00 vs 06:00).
+        Optional<VisualAgendaSheetParser.SlotLocation> byPatient =
+                VisualAgendaSheetParser.findByPatientInDay(
+                        rows,
+                        appointment.date(),
+                        appointment.cedula(),
+                        appointment.phone()
+                );
+        if (byPatient.isPresent()) {
+            return byPatient.get();
+        }
+
+        // 4) Último recurso: primer ID en toda la hoja (puede ser fecha incorrecta).
         for (int index = 0; index < rows.size(); index++) {
             if (sameValue(VisualAgendaSheetParser.text(rows.get(index), 6), appointment.id())) {
                 return new VisualAgendaSheetParser.SlotLocation(index + 1, rows.get(index));
             }
         }
-        return VisualAgendaSheetParser.findSlot(rows, appointment.date(), appointment.time())
-                .orElseThrow(() -> new AppointmentException(
-                        "No se encontró el horario " + appointment.time()
-                                + " del día " + appointment.date()
-                ));
+
+        throw new AppointmentException(
+                "No se encontró el horario " + appointment.time()
+                        + " del día " + appointment.date()
+        );
     }
 
     private boolean belongsToAppointment(List<Object> row, Appointment appointment) {

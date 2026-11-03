@@ -8,14 +8,18 @@ import com.ocnilentes.mediagenda.modules.patient.application.CedulaValidator;
 import com.ocnilentes.mediagenda.modules.patient.application.PatientService;
 import com.ocnilentes.mediagenda.modules.patient.domain.exception.PatientException;
 import com.ocnilentes.mediagenda.modules.patient.domain.model.Patient;
+import com.ocnilentes.mediagenda.modules.whatsapp.domain.exception.WhatsappApiException;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ConversationIntent;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ConversationSession;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ConversationStep;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.IncomingTextMessage;
+import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.InteractiveListRow;
+import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ReplyButton;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.port.WhatsappMessageClient;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -32,8 +36,12 @@ public class ConversationService {
     private static final Logger log = LoggerFactory.getLogger(ConversationService.class);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final Locale SPANISH = Locale.of("es", "CO");
+    private static final DateTimeFormatter DATE_LIST_TITLE =
+            DateTimeFormatter.ofPattern("EEE d MMM", SPANISH);
     /** Horarios antes de esta hora se muestran como mañana; desde aquí, como tarde. */
     private static final LocalTime AFTERNOON_START = LocalTime.of(13, 0);
+    private static final int MAX_LIST_ROWS = 10;
 
     private static final String MENU = """
             ¡Hola! Soy Ocnielentes, tu asistente.
@@ -44,6 +52,12 @@ public class ConversationService {
             3. Información
 
             Responde con el número de la opción.""";
+
+    private static final String TEMPORARY_FAILURE_MESSAGE = """
+            Estamos teniendo una falla temporal con el asistente.
+            Por favor vuelve a intentarlo en unos minutos.
+
+            Si es urgente, comunícate directamente con la óptica.""".trim();
 
     private final ConversationIntentResolver intentResolver;
     private final ConversationSessionStore sessionStore;
@@ -83,9 +97,63 @@ public class ConversationService {
             return;
         }
 
-        String reply = buildReply(message);
+        String reply;
+        try {
+            reply = buildReply(message);
+        } catch (RuntimeException exception) {
+            log.error(
+                    "Failed to build WhatsApp reply to={} messageId={}",
+                    message.from(),
+                    message.messageId(),
+                    exception
+            );
+            sendBestEffort(message.from(), TEMPORARY_FAILURE_MESSAGE);
+            return;
+        }
+
+        if (!StringUtils.hasText(reply)) {
+            return;
+        }
+
         log.info("Conversation reply to={} messageId={}", message.from(), message.messageId());
-        whatsappMessageClient.sendTextMessage(message.from(), reply);
+        try {
+            whatsappMessageClient.sendTextMessage(message.from(), reply);
+        } catch (WhatsappApiException exception) {
+            log.error(
+                    "Failed to deliver WhatsApp reply to={} messageId={} status={}",
+                    message.from(),
+                    message.messageId(),
+                    exception.getStatusCode(),
+                    exception
+            );
+            if (isAuthenticationFailure(exception)) {
+                // Con token inválido Meta no acepta ningún mensaje: el usuario no puede ser avisado por WhatsApp.
+                log.error(
+                        "WhatsApp authentication failed (fix WHATSAPP_TOKEN). "
+                                + "Cannot notify user {} about the outage via WhatsApp.",
+                        message.from()
+                );
+                return;
+            }
+            sendBestEffort(message.from(), TEMPORARY_FAILURE_MESSAGE);
+        }
+    }
+
+    private void sendBestEffort(String to, String body) {
+        try {
+            whatsappMessageClient.sendTextMessage(to, body);
+        } catch (RuntimeException exception) {
+            log.error("Also failed to send temporary-failure message to={}", to, exception);
+        }
+    }
+
+    private boolean isAuthenticationFailure(WhatsappApiException exception) {
+        int status = exception.getStatusCode();
+        if (status == 401 || status == 403) {
+            return true;
+        }
+        String body = exception.getResponseBody();
+        return body != null && (body.contains("\"code\":190") || body.contains("\"code\": 190"));
     }
 
     private String buildReply(IncomingTextMessage message) {
@@ -152,7 +220,7 @@ public class ConversationService {
             Patient patient = existing.get();
             patientService.touchPhone(cedula, session.phone());
             session.knownPatientReady(cedula, patient.fullName(), dates);
-            return "Hola, " + patient.fullName() + ".\n\n" + formatDateOptions(dates);
+            return offerDateOptions(session.phone(), "Hola, " + patient.fullName() + ".\n\n", dates);
         }
 
         session.cedulaReceivedForNewPatient(cedula);
@@ -206,13 +274,13 @@ public class ConversationService {
 
         patientService.registerOrUpdate(session.cedula(), text, session.phone());
         session.nameReceived(text, dates);
-        return "Gracias, " + text + ".\n\n" + formatDateOptions(dates);
+        return offerDateOptions(session.phone(), "Gracias, " + text + ".\n\n", dates);
     }
 
     private String handleDateSelection(ConversationSession session, String text) {
         Integer selected = parseOption(text, session.dateOptions().size());
         if (selected == null) {
-            return "Opción inválida.\n\n" + formatDateOptions(session.dateOptions());
+            return offerDateOptions(session.phone(), "Opción inválida.\n\n", session.dateOptions());
         }
 
         LocalDate date = session.dateOptions().get(selected - 1);
@@ -220,16 +288,23 @@ public class ConversationService {
                 appointmentService.findByCedulaAndDate(session.cedula(), date);
         if (existingSameDay.isPresent()) {
             Appointment existing = existingSameDay.get();
-            return "😊 Ya tienes una cita reservada para ese día a las "
-                    + existing.time().format(TIME_FORMAT)
-                    + ". Para poder atenderte de la mejor manera, solo puedes tener una cita por día.\n\n"
-                    + "Puedes elegir otra fecha con gusto:\n\n"
-                    + formatDateOptions(session.dateOptions());
+            return offerDateOptions(
+                    session.phone(),
+                    "😊 Ya tienes una cita reservada para ese día a las "
+                            + existing.time().format(TIME_FORMAT)
+                            + ". Para poder atenderte de la mejor manera, solo puedes tener una cita por día.\n\n"
+                            + "Puedes elegir otra fecha con gusto:\n\n",
+                    session.dateOptions()
+            );
         }
 
         List<LocalTime> times = appointmentService.listAvailableTimes(date);
         if (times.isEmpty()) {
-            return "Esa fecha ya no tiene horarios. Elige otra:\n\n" + formatDateOptions(session.dateOptions());
+            return offerDateOptions(
+                    session.phone(),
+                    "Esa fecha ya no tiene horarios. Elige otra:\n\n",
+                    session.dateOptions()
+            );
         }
 
         session.dateSelected(date, times);
@@ -254,9 +329,15 @@ public class ConversationService {
                     + formatTimeOptions(only, label, false);
         }
 
-        Integer selected = parseOption(text, 2);
+        Integer selected = parsePeriodOption(text);
         if (selected == null) {
-            return "Opción inválida.\n\n" + formatPeriodOptions(morning, afternoon);
+            return offerPeriodOptions(
+                    session.phone(),
+                    "Opción inválida.\n\n",
+                    session.selectedDate(),
+                    morning,
+                    afternoon
+            );
         }
 
         List<LocalTime> chosen = selected == 1 ? morning : afternoon;
@@ -269,11 +350,13 @@ public class ConversationService {
     private String handleTimeSelection(ConversationSession session, String text) {
         if (isBackCommand(text) && hasBothPeriods(session.availableTimes())) {
             session.backToTimePeriodSelection();
-            return "Fecha: " + session.selectedDate().format(DATE_FORMAT) + "\n\n"
-                    + formatPeriodOptions(
-                            morningTimes(session.availableTimes()),
-                            afternoonTimes(session.availableTimes())
-                    );
+            return offerPeriodOptions(
+                    session.phone(),
+                    "",
+                    session.selectedDate(),
+                    morningTimes(session.availableTimes()),
+                    afternoonTimes(session.availableTimes())
+            );
         }
 
         Integer selected = parseOption(text, session.timeOptions().size());
@@ -391,8 +474,11 @@ public class ConversationService {
         }
 
         session.knownPatientReady(session.cedula(), session.patientName(), dates);
-        return "Perfecto, " + session.patientName() + ". Vamos a reagendar tu cita.\n\n"
-                + formatDateOptions(dates);
+        return offerDateOptions(
+                session.phone(),
+                "Perfecto, " + session.patientName() + ". Vamos a reagendar tu cita.\n\n",
+                dates
+        );
     }
 
     private String formatDateOptions(List<LocalDate> dates) {
@@ -420,7 +506,7 @@ public class ConversationService {
             session.timePeriodSelected(afternoon);
             return header + formatTimeOptions(afternoon, "tarde", false);
         }
-        return header + formatPeriodOptions(morning, afternoon);
+        return offerPeriodOptions(session.phone(), "", session.selectedDate(), morning, afternoon);
     }
 
     private String formatPeriodOptions(List<LocalTime> morning, List<LocalTime> afternoon) {
@@ -473,6 +559,97 @@ public class ConversationService {
             return "día";
         }
         return times.getFirst().isBefore(AFTERNOON_START) ? "mañana" : "tarde";
+    }
+
+    private String offerDateOptions(String to, String intro, List<LocalDate> dates) {
+        String body = intro + "Elige una fecha disponible. Pulsa *Ver fechas* y selecciona el día.";
+        try {
+            whatsappMessageClient.sendInteractiveList(
+                    to,
+                    body,
+                    "Ver fechas",
+                    "Disponibles",
+                    dateListRows(dates)
+            );
+            return null;
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to numbered date options to={}", to, exception);
+            return intro + formatDateOptions(dates);
+        }
+    }
+
+    private String offerPeriodOptions(
+            String to,
+            String intro,
+            LocalDate date,
+            List<LocalTime> morning,
+            List<LocalTime> afternoon
+    ) {
+        String header = "Fecha: " + date.format(DATE_FORMAT) + "\n\n";
+        String body = intro + header
+                + "¿Prefieres en la mañana o en la tarde?\n\n"
+                + "Mañana " + morning.getFirst().format(TIME_FORMAT)
+                + "–" + morning.getLast().format(TIME_FORMAT)
+                + " · Tarde " + afternoon.getFirst().format(TIME_FORMAT)
+                + "–" + afternoon.getLast().format(TIME_FORMAT);
+        try {
+            whatsappMessageClient.sendInteractiveButtons(
+                    to,
+                    body,
+                    List.of(
+                            new ReplyButton("1", "Mañana"),
+                            new ReplyButton("2", "Tarde")
+                    )
+            );
+            return null;
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to numbered period options to={}", to, exception);
+            return intro + header + formatPeriodOptions(morning, afternoon);
+        }
+    }
+
+    private List<InteractiveListRow> dateListRows(List<LocalDate> dates) {
+        int limit = Math.min(dates.size(), MAX_LIST_ROWS);
+        List<InteractiveListRow> rows = new ArrayList<>(limit);
+        for (int index = 0; index < limit; index++) {
+            LocalDate date = dates.get(index);
+            rows.add(new InteractiveListRow(
+                    String.valueOf(index + 1),
+                    clip(capitalize(date.format(DATE_LIST_TITLE)), 24),
+                    date.format(DATE_FORMAT)
+            ));
+        }
+        return rows;
+    }
+
+    private static String capitalize(String value) {
+        if (!StringUtils.hasText(value)) {
+            return value;
+        }
+        return Character.toUpperCase(value.charAt(0)) + value.substring(1);
+    }
+
+    private static String clip(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
+    }
+
+    private Integer parsePeriodOption(String text) {
+        Integer selected = parseOption(text, 2);
+        if (selected != null) {
+            return selected;
+        }
+        String normalized = text == null ? "" : text.trim().toLowerCase(SPANISH)
+                .replace("á", "a");
+        if (normalized.equals("manana") || normalized.equals("m")) {
+            return 1;
+        }
+        if (normalized.equals("tarde") || normalized.equals("t")) {
+            return 2;
+        }
+        return null;
     }
 
     private Integer parseOption(String text, int max) {

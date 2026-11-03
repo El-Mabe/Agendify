@@ -1,6 +1,7 @@
 package com.ocnilentes.mediagenda.modules.whatsapp.outbound.meta;
 
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.exception.WhatsappApiException;
+import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.InteractiveListRow;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ReplyButton;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.port.WhatsappMessageClient;
 import com.ocnilentes.mediagenda.shared.config.WhatsappProperties;
@@ -44,7 +45,35 @@ public class MetaWhatsappMessageClient implements WhatsappMessageClient {
     }
 
     @Override
+    public String sendInteractiveList(
+            String to,
+            String body,
+            String buttonLabel,
+            String sectionTitle,
+            List<InteractiveListRow> rows
+    ) {
+        if (rows == null || rows.isEmpty() || rows.size() > 10) {
+            throw new IllegalArgumentException("Interactive lists require 1 to 10 rows");
+        }
+        if (!StringUtils.hasText(buttonLabel) || buttonLabel.length() > 20) {
+            throw new IllegalArgumentException("Interactive list button label must be 1 to 20 characters");
+        }
+        return send(to, MetaSendInteractiveListRequest.of(to, body, buttonLabel, sectionTitle, rows));
+    }
+
+    @Override
     public String sendTemplate(String to, String templateName, String languageCode, List<String> bodyParameters) {
+        return sendTemplate(to, templateName, languageCode, bodyParameters, List.of());
+    }
+
+    @Override
+    public String sendTemplate(
+            String to,
+            String templateName,
+            String languageCode,
+            List<String> bodyParameters,
+            List<ReplyButton> quickReplyButtons
+    ) {
         requireConfigured(templateName, "Template name is required");
         requireConfigured(languageCode, "Template language is required");
         return send(
@@ -53,7 +82,8 @@ public class MetaWhatsappMessageClient implements WhatsappMessageClient {
                         to,
                         templateName,
                         languageCode,
-                        bodyParameters == null ? List.of() : bodyParameters
+                        bodyParameters == null ? List.of() : bodyParameters,
+                        quickReplyButtons == null ? List.of() : quickReplyButtons
                 )
         );
     }

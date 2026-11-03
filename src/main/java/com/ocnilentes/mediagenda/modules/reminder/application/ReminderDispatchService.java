@@ -155,7 +155,8 @@ public class ReminderDispatchService {
                     appointment.phone(),
                     properties.templateName(),
                     properties.templateLanguage(),
-                    ReminderPayloadFactory.templateBodyParameters(appointment)
+                    ReminderPayloadFactory.templateBodyParameters(appointment),
+                    ReminderPayloadFactory.buttonsFor(appointment)
             );
         }
 

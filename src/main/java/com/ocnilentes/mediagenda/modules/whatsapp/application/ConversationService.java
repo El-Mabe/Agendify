@@ -44,7 +44,7 @@ public class ConversationService {
     private static final int MAX_LIST_ROWS = 10;
 
     private static final String MENU = """
-            ¡Hola! Soy Ocnielentes, tu asistente.
+            Hola, soy Ocni, el asistente de Ocnilentes.
 
             ¿Qué deseas hacer?
             1. Agendar

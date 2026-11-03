@@ -261,17 +261,28 @@ public class ProcessIncomingWebhookService {
 
     private String resolveSender(JsonNode message, JsonNode changeValue) {
         String from = textOrNull(message.path("from"));
-        if (StringUtils.hasText(from)) {
-            return from;
+        String waId = firstContactWaId(changeValue);
+        String resolved = WhatsappSenderResolver.resolve(from, waId);
+        if (StringUtils.hasText(from)
+                && StringUtils.hasText(waId)
+                && !from.equals(waId)) {
+            log.info(
+                    "WhatsApp sender ids differ from={} waId={} resolved={}",
+                    from,
+                    waId,
+                    resolved
+            );
         }
+        return resolved;
+    }
 
+    private String firstContactWaId(JsonNode changeValue) {
         for (JsonNode contact : iterable(changeValue.path("contacts"))) {
             String waId = textOrNull(contact.path("wa_id"));
             if (StringUtils.hasText(waId)) {
                 return waId;
             }
         }
-
         return null;
     }
 

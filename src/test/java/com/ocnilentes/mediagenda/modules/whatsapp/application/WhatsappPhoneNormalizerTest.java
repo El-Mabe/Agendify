@@ -20,4 +20,11 @@ class WhatsappPhoneNormalizerTest {
     void normalize_stripsNonDigits() {
         assertThat(WhatsappPhoneNormalizer.normalize("+57 318 310 8750")).isEqualTo("573183108750");
     }
+
+    @Test
+    void normalize_doesNotPrefixCountryCodeOnLid() {
+        assertThat(WhatsappPhoneNormalizer.normalize("165043027399123@lid"))
+                .isEqualTo("165043027399123");
+        assertThat(WhatsappPhoneNormalizer.isLikelyPhone("165043027399123@lid")).isFalse();
+    }
 }

@@ -20,11 +20,38 @@ final class WhatsappPhoneNormalizer {
             return null;
         }
 
+        // LID / BSUID: no anteponer 57 (rompería el id y Meta rechaza el envío).
+        if (isLikelyOpaqueId(phone, digits)) {
+            return digits;
+        }
+
         // Celular Colombia local: 3XXXXXXXXX (10 dígitos) → 57XXXXXXXXXX
         if (digits.length() == 10 && digits.startsWith("3")) {
             return "57" + digits;
         }
 
         return digits;
+    }
+
+    static boolean isLikelyPhone(String value) {
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        String digits = value.trim().replaceAll("[^0-9]", "");
+        if (isLikelyOpaqueId(value, digits)) {
+            return false;
+        }
+        if (digits.length() == 10 && digits.startsWith("3")) {
+            return true;
+        }
+        return digits.length() >= 11 && digits.length() <= 13;
+    }
+
+    private static boolean isLikelyOpaqueId(String raw, String digits) {
+        String lower = raw.toLowerCase();
+        if (lower.contains("lid") || lower.contains("bsuid") || lower.startsWith("rs.")) {
+            return true;
+        }
+        return digits.length() >= 14;
     }
 }

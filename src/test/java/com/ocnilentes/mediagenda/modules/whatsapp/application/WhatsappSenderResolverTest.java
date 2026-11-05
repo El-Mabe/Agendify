@@ -23,4 +23,10 @@ class WhatsappSenderResolverTest {
         assertThat(WhatsappSenderResolver.resolve("3183108750", null))
                 .isEqualTo("573183108750");
     }
+
+    @Test
+    void usesFromUserIdWhenMetaOmitsPhone() {
+        assertThat(WhatsappSenderResolver.resolve(null, null, "CO.1142953118206038"))
+                .isEqualTo("CO.1142953118206038");
+    }
 }

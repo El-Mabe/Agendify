@@ -10,12 +10,21 @@ final class WhatsappPhoneNormalizer {
     private WhatsappPhoneNormalizer() {
     }
 
+    static boolean isMetaUserId(String value) {
+        return StringUtils.hasText(value) && value.trim().matches("(?i)^[A-Z]{2}\\.[0-9]+$");
+    }
+
     static String normalize(String phone) {
         if (!StringUtils.hasText(phone)) {
             return null;
         }
 
-        String digits = phone.trim().replaceAll("[^0-9]", "");
+        String trimmed = phone.trim();
+        if (isMetaUserId(trimmed)) {
+            return trimmed.toUpperCase();
+        }
+
+        String digits = trimmed.replaceAll("[^0-9]", "");
         if (!StringUtils.hasText(digits)) {
             return null;
         }

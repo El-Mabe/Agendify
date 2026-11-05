@@ -262,14 +262,18 @@ public class ProcessIncomingWebhookService {
     private String resolveSender(JsonNode message, JsonNode changeValue) {
         String from = textOrNull(message.path("from"));
         String waId = firstContactWaId(changeValue);
-        String resolved = WhatsappSenderResolver.resolve(from, waId);
-        if (StringUtils.hasText(from)
-                && StringUtils.hasText(waId)
-                && !from.equals(waId)) {
+        String fromUserId = textOrNull(message.path("from_user_id"));
+        if (!StringUtils.hasText(fromUserId)) {
+            fromUserId = firstContactUserId(changeValue);
+        }
+        String resolved = WhatsappSenderResolver.resolve(from, waId, fromUserId);
+        if ((StringUtils.hasText(from) && StringUtils.hasText(waId) && !from.equals(waId))
+                || StringUtils.hasText(fromUserId)) {
             log.info(
-                    "WhatsApp sender ids differ from={} waId={} resolved={}",
+                    "WhatsApp sender ids from={} waId={} fromUserId={} resolved={}",
                     from,
                     waId,
+                    fromUserId,
                     resolved
             );
         }
@@ -281,6 +285,16 @@ public class ProcessIncomingWebhookService {
             String waId = textOrNull(contact.path("wa_id"));
             if (StringUtils.hasText(waId)) {
                 return waId;
+            }
+        }
+        return null;
+    }
+
+    private String firstContactUserId(JsonNode changeValue) {
+        for (JsonNode contact : iterable(changeValue.path("contacts"))) {
+            String userId = textOrNull(contact.path("user_id"));
+            if (StringUtils.hasText(userId)) {
+                return userId;
             }
         }
         return null;

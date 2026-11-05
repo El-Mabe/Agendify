@@ -12,17 +12,27 @@ final class WhatsappSenderResolver {
     }
 
     static String resolve(String from, String waId) {
+        return resolve(from, waId, null);
+    }
+
+    static String resolve(String from, String waId, String fromUserId) {
         if (WhatsappPhoneNormalizer.isLikelyPhone(waId)) {
             return WhatsappPhoneNormalizer.normalize(waId);
         }
         if (WhatsappPhoneNormalizer.isLikelyPhone(from)) {
             return WhatsappPhoneNormalizer.normalize(from);
         }
+        if (WhatsappPhoneNormalizer.isMetaUserId(fromUserId)) {
+            return WhatsappPhoneNormalizer.normalize(fromUserId);
+        }
         if (StringUtils.hasText(waId)) {
             return WhatsappPhoneNormalizer.normalize(waId);
         }
         if (StringUtils.hasText(from)) {
             return WhatsappPhoneNormalizer.normalize(from);
+        }
+        if (StringUtils.hasText(fromUserId)) {
+            return WhatsappPhoneNormalizer.normalize(fromUserId);
         }
         return null;
     }

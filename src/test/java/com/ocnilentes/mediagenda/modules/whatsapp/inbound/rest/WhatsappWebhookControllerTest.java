@@ -118,6 +118,55 @@ class WhatsappWebhookControllerTest {
     }
 
     @Test
+    void shouldReplyUsingFromUserIdWhenPhoneIsMissing() throws Exception {
+        String payload = """
+                {
+                  "object": "whatsapp_business_account",
+                  "entry": [
+                    {
+                      "id": "WABA_ID",
+                      "changes": [
+                        {
+                          "field": "messages",
+                          "value": {
+                            "messaging_product": "whatsapp",
+                            "metadata": {
+                              "display_phone_number": "573247273774",
+                              "phone_number_id": "1379904421872907"
+                            },
+                            "contacts": [
+                              {
+                                "profile": { "name": "Osquitar Ramirez", "username": "oscar_ramirezb31" },
+                                "user_id": "CO.1142953118206038"
+                              }
+                            ],
+                            "messages": [
+                              {
+                                "from_user_id": "CO.1142953118206038",
+                                "id": "wamid.user-id-hola",
+                                "timestamp": "1710000000",
+                                "type": "text",
+                                "text": { "body": "Hola" }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/whatsapp/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        verify(whatsappMessageClient, timeout(2000))
+                .sendTextMessage(eq("CO.1142953118206038"), anyString());
+    }
+
+    @Test
     void shouldAcceptIncomingListReplyWebhook() throws Exception {
         String payload = """
                 {

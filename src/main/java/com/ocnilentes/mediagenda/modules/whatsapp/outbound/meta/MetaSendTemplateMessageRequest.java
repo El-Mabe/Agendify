@@ -11,6 +11,7 @@ record MetaSendTemplateMessageRequest(
         @JsonProperty("messaging_product") String messagingProduct,
         @JsonProperty("recipient_type") String recipientType,
         String to,
+        String recipient,
         String type,
         Template template
 ) {
@@ -40,10 +41,12 @@ record MetaSendTemplateMessageRequest(
             }
         }
 
+        MetaRecipientAddress address = MetaRecipientAddress.of(to);
         return new MetaSendTemplateMessageRequest(
                 "whatsapp",
                 "individual",
-                to,
+                address.to(),
+                address.recipient(),
                 "template",
                 new Template(
                         templateName,

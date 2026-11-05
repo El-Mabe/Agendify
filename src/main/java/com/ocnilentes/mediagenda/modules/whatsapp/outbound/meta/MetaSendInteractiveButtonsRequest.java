@@ -1,13 +1,16 @@
 package com.ocnilentes.mediagenda.modules.whatsapp.outbound.meta;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ReplyButton;
 import java.util.List;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 record MetaSendInteractiveButtonsRequest(
         @JsonProperty("messaging_product") String messagingProduct,
         @JsonProperty("recipient_type") String recipientType,
         String to,
+        String recipient,
         String type,
         Interactive interactive
 ) {
@@ -19,10 +22,12 @@ record MetaSendInteractiveButtonsRequest(
                         new Reply(button.id(), button.title())
                 ))
                 .toList();
+        MetaRecipientAddress address = MetaRecipientAddress.of(to);
         return new MetaSendInteractiveButtonsRequest(
                 "whatsapp",
                 "individual",
-                to,
+                address.to(),
+                address.recipient(),
                 "interactive",
                 new Interactive(
                         "button",

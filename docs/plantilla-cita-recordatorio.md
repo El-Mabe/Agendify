@@ -18,7 +18,7 @@ Hola, {{1}} 😊 Queremos recordarte que tienes cita de optometría con nosotros
 
 📅 Fecha: {{2}}
 🕘 Hora: {{3}}
-📍 Lugar: Centro Comercial Petecuy, Local 119, Cra. 9 #15-35, Cali
+📍 Lugar: Calle 15#8-103, Centro comercial Petecuy, Local 119, Torre A
 
 Por favor, cuéntanos si podrás asistir usando los botones de abajo. ¡Gracias!
 ```
@@ -46,7 +46,7 @@ Header: `Authorization: Bearer <WHATSAPP_TOKEN>`
   "components": [
     {
       "type": "BODY",
-      "text": "Hola, {{1}} 😊 Queremos recordarte que tienes cita de optometría con nosotros:\n\n📅 Fecha: {{2}}\n🕘 Hora: {{3}}\n📍 Lugar: Centro Comercial Petecuy, Local 119, Cra. 9 #15-35, Cali\n\nPor favor, cuéntanos si podrás asistir usando los botones de abajo. ¡Gracias!",
+      "text": "Hola, {{1}} 😊 Queremos recordarte que tienes cita de optometría con nosotros:\n\n📅 Fecha: {{2}}\n🕘 Hora: {{3}}\n📍 Lugar: Calle 15#8-103, Centro comercial Petecuy, Local 119, Torre A\n\nPor favor, cuéntanos si podrás asistir usando los botones de abajo. ¡Gracias!",
       "example": {
         "body_text": [["María Pérez", "sábado 7 de noviembre", "9:00 a. m."]]
       }

@@ -15,7 +15,7 @@ public final class ReminderPayloadFactory {
     public static final String CONFIRM_PREFIX = "rc|";
     public static final String CANCEL_PREFIX = "rx|";
     static final String CLINIC_PLACE =
-            "Centro Comercial Petecuy, Local 119, Cra. 9 #15-35, Cali";
+            "Calle 15#8-103, Centro comercial Petecuy, Local 119, Torre A";
 
     private static final Locale SPANISH = Locale.of("es", "CO");
     private static final DateTimeFormatter DATE_FORMAT =

@@ -20,8 +20,7 @@ public class ClinicInformationService {
             - Gafas de sol
 
             📍 Ubicación:
-            Centro Comercial Petecuy, Local 119
-            Cra. 9 #15-35, Cali
+            Calle 15#8-103, Centro comercial Petecuy, Local 119, Torre A
 
             📞 Teléfono:
             (2) 888-1500

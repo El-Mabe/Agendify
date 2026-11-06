@@ -43,11 +43,14 @@ public class ConversationService {
     private static final LocalTime AFTERNOON_START = LocalTime.of(13, 0);
     private static final int MAX_LIST_ROWS = 10;
     private static final int MAX_INVALID_ATTEMPTS = 3;
-    private static final String TERMS_URL = "https://el-mabe.github.io/Agendify/terms.html";
-    private static final String PRIVACY_URL = "https://el-mabe.github.io/Agendify/privacy.html";
     private static final String PERIOD_PROMPT = "¿Deseas agendar la cita en la mañana o en la tarde?";
 
-    private static final String MENU = """
+    private static final String MENU_BODY = """
+            Hola, soy Ocni, el asistente de Ocnilentes.
+
+            ¿Qué deseas hacer?""".trim();
+
+    private static final String MENU_FALLBACK = """
             Hola, soy Ocni, el asistente de Ocnilentes.
 
             ¿Qué deseas hacer?
@@ -55,18 +58,13 @@ public class ConversationService {
             2. Cancelar cita
             3. Otra información
 
-            Responde con el número de la opción.""";
+            Responde con el número o pulsa una opción.""";
 
-    private static final String CONSENT_PROMPT = """
-            Para agendar o cancelar una cita necesitamos tratar tu nombre, apellido, cédula y número de WhatsApp.
-
-            Al continuar aceptas los Términos de servicio y la Política de privacidad:
-            %s
-            %s
-
-            1. Acepto
-            2. No acepto
-            """.formatted(TERMS_URL, PRIVACY_URL).trim();
+    private static final List<ReplyButton> MENU_BUTTONS = List.of(
+            new ReplyButton("1", "Agendar cita"),
+            new ReplyButton("2", "Cancelar cita"),
+            new ReplyButton("3", "Otra información")
+    );
 
     private static final String IDLE_EXPIRED_NOTICE = """
             Cerré la conversación anterior por inactividad (30 minutos).
@@ -188,12 +186,12 @@ public class ConversationService {
         String text = message.text() == null ? "" : message.text().trim();
 
         if (expired) {
-            return IDLE_EXPIRED_NOTICE + MENU;
+            return offerMenu(session.phone(), IDLE_EXPIRED_NOTICE);
         }
 
         if (isMenuCommand(text)) {
             session.reset();
-            return MENU;
+            return offerMenu(session.phone(), "");
         }
 
         if (session.step() != ConversationStep.IDLE) {
@@ -202,16 +200,19 @@ public class ConversationService {
 
         ConversationIntent intent = intentResolver.resolve(text);
         return switch (intent) {
-            case SHOW_MENU -> MENU;
-            case SCHEDULE -> requireConsentThen(session, ConversationIntent.SCHEDULE);
-            case CANCEL -> requireConsentThen(session, ConversationIntent.CANCEL);
+            case SHOW_MENU -> offerMenu(session.phone(), "");
+            case SCHEDULE -> startScheduling(session);
+            case CANCEL -> startCancelling(session);
             case INFORMATION -> clinicInformationService.buildInformationMessage();
         };
     }
 
     private String handleActiveFlow(ConversationSession session, String text) {
         return switch (session.step()) {
-            case AWAITING_CONSENT -> handleConsent(session, text);
+            case AWAITING_CONSENT -> {
+                session.reset();
+                yield offerMenu(session.phone(), "");
+            }
             case AWAITING_SCHEDULE_CEDULA -> handleScheduleCedula(session, text);
             case AWAITING_CANCEL_CEDULA -> handleCancelCedula(session, text);
             case AWAITING_NAME -> handleName(session, text);
@@ -220,63 +221,19 @@ public class ConversationService {
             case AWAITING_TIME_SELECTION -> handleTimeSelection(session, text);
             case AWAITING_CANCEL_SELECTION -> handleCancelSelection(session, text);
             case AWAITING_RESCHEDULE_DECISION -> handleRescheduleDecision(session, text);
-            case IDLE -> MENU;
+            case IDLE -> offerMenu(session.phone(), "");
         };
     }
 
-    private String requireConsentThen(ConversationSession session, ConversationIntent intent) {
-        if (session.consentAccepted()) {
-            return continueAfterConsent(session, intent);
-        }
-        session.awaitConsent(intent);
-        return offerConsent(session.phone());
-    }
-
-    private String continueAfterConsent(ConversationSession session, ConversationIntent intent) {
-        if (intent == ConversationIntent.CANCEL) {
-            return startCancelling(session);
-        }
-        return startScheduling(session);
-    }
-
-    private String offerConsent(String to) {
+    private String offerMenu(String to, String intro) {
+        String body = StringUtils.hasText(intro) ? intro.trim() + "\n\n" + MENU_BODY : MENU_BODY;
         try {
-            whatsappMessageClient.sendInteractiveButtons(
-                    to,
-                    CONSENT_PROMPT,
-                    List.of(
-                            new ReplyButton("1", "Acepto"),
-                            new ReplyButton("2", "No acepto")
-                    )
-            );
+            whatsappMessageClient.sendInteractiveButtons(to, body, MENU_BUTTONS);
             return null;
         } catch (RuntimeException exception) {
-            log.warn("Falling back to numbered consent options to={}", to, exception);
-            return CONSENT_PROMPT + "\n\nResponde con el número de la opción.";
+            log.warn("Falling back to numbered menu to={}", to, exception);
+            return StringUtils.hasText(intro) ? intro.trim() + "\n\n" + MENU_FALLBACK : MENU_FALLBACK;
         }
-    }
-
-    private String handleConsent(ConversationSession session, String text) {
-        Integer selected = parseConsentOption(text);
-        if (selected == null) {
-            session.registerInvalidAttempt();
-            if (session.invalidAttempts() >= MAX_INVALID_ATTEMPTS) {
-                session.reset();
-                return TOO_MANY_INVALID + MENU;
-            }
-            return offerConsent(session.phone());
-        }
-        session.clearInvalidAttempts();
-        if (selected == 2) {
-            session.reset();
-            return "Entendido. Sin tu aceptación no podemos agendar ni cancelar citas.\n\n"
-                    + "Escribe *menú* si quieres ver otras opciones.";
-        }
-        session.acceptConsent();
-        ConversationIntent pending = session.pendingAfterConsent() == ConversationIntent.CANCEL
-                ? ConversationIntent.CANCEL
-                : ConversationIntent.SCHEDULE;
-        return continueAfterConsent(session, pending);
     }
 
     private String startScheduling(ConversationSession session) {
@@ -744,28 +701,12 @@ public class ConversationService {
         session.registerInvalidAttempt();
         if (session.invalidAttempts() >= MAX_INVALID_ATTEMPTS) {
             session.reset();
-            return TOO_MANY_INVALID + MENU;
+            return offerMenu(session.phone(), TOO_MANY_INVALID);
         }
         if (StringUtils.hasText(retryMessage)) {
             return retryMessage;
         }
         return fallbackText;
-    }
-
-    private Integer parseConsentOption(String text) {
-        Integer selected = parseOption(text, 2);
-        if (selected != null) {
-            return selected;
-        }
-        String normalized = text == null ? "" : text.trim().toLowerCase(SPANISH)
-                .replace("á", "a");
-        if (normalized.equals("acepto") || normalized.equals("si") || normalized.equals("s")) {
-            return 1;
-        }
-        if (normalized.equals("no acepto") || normalized.equals("no") || normalized.equals("n")) {
-            return 2;
-        }
-        return null;
     }
 
     private Integer parsePeriodOption(String text) {

@@ -3,7 +3,10 @@ package com.ocnilentes.mediagenda.modules.reminder.application;
 import com.ocnilentes.mediagenda.modules.appointment.domain.model.Appointment;
 import com.ocnilentes.mediagenda.modules.reminder.domain.model.ReminderChannel;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ReplyButton;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoField;
 import java.util.List;
 import java.util.Locale;
 
@@ -11,9 +14,12 @@ public final class ReminderPayloadFactory {
 
     public static final String CONFIRM_PREFIX = "rc|";
     public static final String CANCEL_PREFIX = "rx|";
+    static final String CLINIC_PLACE =
+            "Centro Comercial Petecuy, Local 119, Cra. 9 #15-35, Cali";
 
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final Locale SPANISH = Locale.of("es", "CO");
+    private static final DateTimeFormatter DATE_FORMAT =
+            DateTimeFormatter.ofPattern("EEEE d 'de' MMMM", SPANISH);
 
     private ReminderPayloadFactory() {
     }
@@ -26,33 +32,38 @@ public final class ReminderPayloadFactory {
         return CANCEL_PREFIX + appointmentKey;
     }
 
+    public static String formatDate(LocalDate date) {
+        return date.format(DATE_FORMAT).toLowerCase(SPANISH);
+    }
+
+    public static String formatTime(LocalTime time) {
+        int hour = time.get(ChronoField.CLOCK_HOUR_OF_AMPM);
+        String period = time.get(ChronoField.AMPM_OF_DAY) == 0 ? "a. m." : "p. m.";
+        return hour + ":" + String.format("%02d", time.getMinute()) + " " + period;
+    }
+
     public static String buildBody(Appointment appointment) {
-        String name = appointment.patientName() == null || appointment.patientName().isBlank()
-                ? "paciente"
-                : appointment.patientName();
         return """
-                ¡Hola, %s!
+                Hola, %s 😊 Queremos recordarte que tienes cita de optometría con nosotros:
 
-                Te recordamos tu cita de optometría:
                 📅 Fecha: %s
-                🕐 Hora: %s
+                🕘 Hora: %s
+                📍 Lugar: %s
 
-                Por favor confirma o cancela con los botones de abajo.
+                Por favor, cuéntanos si podrás asistir usando los botones de abajo. ¡Gracias!
                 """.formatted(
-                name,
-                appointment.date().format(DATE_FORMAT),
-                appointment.time().format(TIME_FORMAT)
+                patientName(appointment),
+                formatDate(appointment.date()),
+                formatTime(appointment.time()),
+                CLINIC_PLACE
         ).trim();
     }
 
     public static List<String> templateBodyParameters(Appointment appointment) {
-        String name = appointment.patientName() == null || appointment.patientName().isBlank()
-                ? "paciente"
-                : appointment.patientName();
         return List.of(
-                name,
-                appointment.date().format(DATE_FORMAT),
-                appointment.time().format(TIME_FORMAT)
+                patientName(appointment),
+                formatDate(appointment.date()),
+                formatTime(appointment.time())
         );
     }
 
@@ -98,5 +109,12 @@ public final class ReminderPayloadFactory {
 
     public static ReminderChannel channel() {
         return ReminderChannel.DAY_BEFORE;
+    }
+
+    private static String patientName(Appointment appointment) {
+        if (appointment.patientName() == null || appointment.patientName().isBlank()) {
+            return "paciente";
+        }
+        return appointment.patientName();
     }
 }

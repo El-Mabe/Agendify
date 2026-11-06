@@ -45,6 +45,8 @@ public class ConversationIntentResolver {
         return text.equals("3")
                 || text.equals("informacion")
                 || text.equals("información")
+                || text.equals("otra informacion")
+                || text.equals("otra información")
                 || text.equals("info");
     }
 

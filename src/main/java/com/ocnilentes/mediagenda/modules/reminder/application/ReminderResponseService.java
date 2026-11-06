@@ -9,7 +9,6 @@ import com.ocnilentes.mediagenda.modules.reminder.domain.port.AppointmentReminde
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.IncomingButtonReply;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.port.WhatsappMessageClient;
 import java.time.Instant;
-import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -22,8 +21,6 @@ import org.springframework.util.StringUtils;
 public class ReminderResponseService {
 
     private static final Logger log = LoggerFactory.getLogger(ReminderResponseService.class);
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
     private final AppointmentReminderRepository reminderRepository;
     private final AppointmentService appointmentService;
@@ -95,8 +92,8 @@ public class ReminderResponseService {
 
                             Te esperamos. Llega 10 minutos antes.
                             """.formatted(
-                            current.appointmentDate().format(DATE_FORMAT),
-                            current.appointmentTime().format(TIME_FORMAT)
+                            ReminderPayloadFactory.formatDate(current.appointmentDate()),
+                            ReminderPayloadFactory.formatTime(current.appointmentTime())
                     ).trim()
             );
             log.info("Reminder confirmed appointmentKey={} phone={}", current.appointmentKey(), reply.from());
@@ -116,8 +113,8 @@ public class ReminderResponseService {
 
                             Si deseas agendar otra, escribe *menú*.
                             """.formatted(
-                            cancelled.date().format(DATE_FORMAT),
-                            cancelled.time().format(TIME_FORMAT)
+                            ReminderPayloadFactory.formatDate(cancelled.date()),
+                            ReminderPayloadFactory.formatTime(cancelled.time())
                     ).trim()
             );
             log.info("Reminder cancelled appointmentKey={} phone={}", current.appointmentKey(), reply.from());

@@ -1,5 +1,7 @@
 package com.ocnilentes.mediagenda.modules.whatsapp.domain.model;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -9,6 +11,10 @@ public class ConversationSession {
 
     private final String phone;
     private ConversationStep step;
+    private ConversationIntent pendingAfterConsent;
+    private boolean consentAccepted;
+    private int invalidAttempts;
+    private Instant lastActivity;
     private String cedula;
     private String patientName;
     private LocalDate selectedDate;
@@ -19,6 +25,8 @@ public class ConversationSession {
 
     public ConversationSession(String phone) {
         this.phone = phone;
+        this.consentAccepted = false;
+        this.lastActivity = Instant.now();
         reset();
     }
 
@@ -28,6 +36,22 @@ public class ConversationSession {
 
     public ConversationStep step() {
         return step;
+    }
+
+    public ConversationIntent pendingAfterConsent() {
+        return pendingAfterConsent;
+    }
+
+    public boolean consentAccepted() {
+        return consentAccepted;
+    }
+
+    public int invalidAttempts() {
+        return invalidAttempts;
+    }
+
+    public Instant lastActivity() {
+        return lastActivity;
     }
 
     public String cedula() {
@@ -58,8 +82,25 @@ public class ConversationSession {
         return cancelCandidateIds;
     }
 
+    public void touch() {
+        this.lastActivity = Instant.now();
+    }
+
+    public void setLastActivity(Instant lastActivity) {
+        this.lastActivity = lastActivity;
+    }
+
+    public boolean isIdleExpired(Duration timeout) {
+        if (timeout == null || lastActivity == null) {
+            return false;
+        }
+        return lastActivity.plus(timeout).isBefore(Instant.now());
+    }
+
     public void reset() {
         this.step = ConversationStep.IDLE;
+        this.pendingAfterConsent = null;
+        this.invalidAttempts = 0;
         this.cedula = null;
         this.patientName = null;
         this.selectedDate = null;
@@ -67,6 +108,25 @@ public class ConversationSession {
         this.availableTimes = new ArrayList<>();
         this.timeOptions = new ArrayList<>();
         this.cancelCandidateIds = new ArrayList<>();
+    }
+
+    public void acceptConsent() {
+        this.consentAccepted = true;
+        this.invalidAttempts = 0;
+    }
+
+    public void awaitConsent(ConversationIntent pending) {
+        this.pendingAfterConsent = pending;
+        this.step = ConversationStep.AWAITING_CONSENT;
+        this.invalidAttempts = 0;
+    }
+
+    public void registerInvalidAttempt() {
+        this.invalidAttempts++;
+    }
+
+    public void clearInvalidAttempts() {
+        this.invalidAttempts = 0;
     }
 
     public void startScheduling() {
@@ -82,6 +142,7 @@ public class ConversationSession {
     public void cedulaReceivedForNewPatient(String cedula) {
         this.cedula = cedula;
         this.step = ConversationStep.AWAITING_NAME;
+        this.invalidAttempts = 0;
     }
 
     public void knownPatientReady(String cedula, String patientName, List<LocalDate> dateOptions) {
@@ -89,12 +150,14 @@ public class ConversationSession {
         this.patientName = patientName;
         this.dateOptions = new ArrayList<>(dateOptions);
         this.step = ConversationStep.AWAITING_DATE_SELECTION;
+        this.invalidAttempts = 0;
     }
 
     public void nameReceived(String patientName, List<LocalDate> dateOptions) {
         this.patientName = patientName;
         this.dateOptions = new ArrayList<>(dateOptions);
         this.step = ConversationStep.AWAITING_DATE_SELECTION;
+        this.invalidAttempts = 0;
     }
 
     public void dateSelected(LocalDate date, List<LocalTime> availableTimes) {
@@ -102,16 +165,19 @@ public class ConversationSession {
         this.availableTimes = new ArrayList<>(availableTimes);
         this.timeOptions = new ArrayList<>();
         this.step = ConversationStep.AWAITING_TIME_PERIOD_SELECTION;
+        this.invalidAttempts = 0;
     }
 
     public void timePeriodSelected(List<LocalTime> timeOptions) {
         this.timeOptions = new ArrayList<>(timeOptions);
         this.step = ConversationStep.AWAITING_TIME_SELECTION;
+        this.invalidAttempts = 0;
     }
 
     public void backToTimePeriodSelection() {
         this.timeOptions = new ArrayList<>();
         this.step = ConversationStep.AWAITING_TIME_PERIOD_SELECTION;
+        this.invalidAttempts = 0;
     }
 
     public void startCancelling(String cedula, List<String> candidateIds) {
@@ -123,6 +189,7 @@ public class ConversationSession {
         this.timeOptions = new ArrayList<>();
         this.cancelCandidateIds = new ArrayList<>(candidateIds);
         this.step = ConversationStep.AWAITING_CANCEL_SELECTION;
+        this.invalidAttempts = 0;
     }
 
     public void awaitRescheduleDecision(String patientName, String cedula) {
@@ -134,6 +201,7 @@ public class ConversationSession {
         this.timeOptions = new ArrayList<>();
         this.cancelCandidateIds = new ArrayList<>();
         this.step = ConversationStep.AWAITING_RESCHEDULE_DECISION;
+        this.invalidAttempts = 0;
     }
 
     public void clearAfterCompletion() {

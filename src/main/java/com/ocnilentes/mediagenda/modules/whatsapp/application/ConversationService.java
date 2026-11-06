@@ -42,16 +42,42 @@ public class ConversationService {
     /** Horarios antes de esta hora se muestran como mañana; desde aquí, como tarde. */
     private static final LocalTime AFTERNOON_START = LocalTime.of(13, 0);
     private static final int MAX_LIST_ROWS = 10;
+    private static final int MAX_INVALID_ATTEMPTS = 3;
+    private static final String TERMS_URL = "https://el-mabe.github.io/Agendify/terms.html";
+    private static final String PRIVACY_URL = "https://el-mabe.github.io/Agendify/privacy.html";
+    private static final String PERIOD_PROMPT = "¿Deseas agendar la cita en la mañana o en la tarde?";
 
     private static final String MENU = """
             Hola, soy Ocni, el asistente de Ocnilentes.
 
             ¿Qué deseas hacer?
-            1. Agendar
-            2. Cancelar
-            3. Información
+            1. Agendar cita
+            2. Cancelar cita
+            3. Otra información
 
             Responde con el número de la opción.""";
+
+    private static final String CONSENT_PROMPT = """
+            Para agendar o cancelar una cita necesitamos tratar tu nombre, apellido, cédula y número de WhatsApp.
+
+            Al continuar aceptas los Términos de servicio y la Política de privacidad:
+            %s
+            %s
+
+            1. Acepto
+            2. No acepto
+            """.formatted(TERMS_URL, PRIVACY_URL).trim();
+
+    private static final String IDLE_EXPIRED_NOTICE = """
+            Cerré la conversación anterior por inactividad (30 minutos).
+            Así evitamos dejar el chat abierto y perder el hilo.
+
+            """;
+
+    private static final String TOO_MANY_INVALID = """
+            Detecté 3 opciones inválidas. Cierro esta conversación para no dejar el chat abierto.
+
+            """;
 
     private static final String TEMPORARY_FAILURE_MESSAGE = """
             Estamos teniendo una falla temporal con el asistente.
@@ -157,8 +183,13 @@ public class ConversationService {
     }
 
     private String buildReply(IncomingTextMessage message) {
+        boolean expired = sessionStore.discardIfIdle(message.from());
         ConversationSession session = sessionStore.getOrCreate(message.from());
         String text = message.text() == null ? "" : message.text().trim();
+
+        if (expired) {
+            return IDLE_EXPIRED_NOTICE + MENU;
+        }
 
         if (isMenuCommand(text)) {
             session.reset();
@@ -172,14 +203,15 @@ public class ConversationService {
         ConversationIntent intent = intentResolver.resolve(text);
         return switch (intent) {
             case SHOW_MENU -> MENU;
-            case SCHEDULE -> startScheduling(session);
-            case CANCEL -> startCancelling(session);
+            case SCHEDULE -> requireConsentThen(session, ConversationIntent.SCHEDULE);
+            case CANCEL -> requireConsentThen(session, ConversationIntent.CANCEL);
             case INFORMATION -> clinicInformationService.buildInformationMessage();
         };
     }
 
     private String handleActiveFlow(ConversationSession session, String text) {
         return switch (session.step()) {
+            case AWAITING_CONSENT -> handleConsent(session, text);
             case AWAITING_SCHEDULE_CEDULA -> handleScheduleCedula(session, text);
             case AWAITING_CANCEL_CEDULA -> handleCancelCedula(session, text);
             case AWAITING_NAME -> handleName(session, text);
@@ -192,14 +224,71 @@ public class ConversationService {
         };
     }
 
+    private String requireConsentThen(ConversationSession session, ConversationIntent intent) {
+        if (session.consentAccepted()) {
+            return continueAfterConsent(session, intent);
+        }
+        session.awaitConsent(intent);
+        return offerConsent(session.phone());
+    }
+
+    private String continueAfterConsent(ConversationSession session, ConversationIntent intent) {
+        if (intent == ConversationIntent.CANCEL) {
+            return startCancelling(session);
+        }
+        return startScheduling(session);
+    }
+
+    private String offerConsent(String to) {
+        try {
+            whatsappMessageClient.sendInteractiveButtons(
+                    to,
+                    CONSENT_PROMPT,
+                    List.of(
+                            new ReplyButton("1", "Acepto"),
+                            new ReplyButton("2", "No acepto")
+                    )
+            );
+            return null;
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to numbered consent options to={}", to, exception);
+            return CONSENT_PROMPT + "\n\nResponde con el número de la opción.";
+        }
+    }
+
+    private String handleConsent(ConversationSession session, String text) {
+        Integer selected = parseConsentOption(text);
+        if (selected == null) {
+            session.registerInvalidAttempt();
+            if (session.invalidAttempts() >= MAX_INVALID_ATTEMPTS) {
+                session.reset();
+                return TOO_MANY_INVALID + MENU;
+            }
+            return offerConsent(session.phone());
+        }
+        session.clearInvalidAttempts();
+        if (selected == 2) {
+            session.reset();
+            return "Entendido. Sin tu aceptación no podemos agendar ni cancelar citas.\n\n"
+                    + "Escribe *menú* si quieres ver otras opciones.";
+        }
+        session.acceptConsent();
+        ConversationIntent pending = session.pendingAfterConsent() == ConversationIntent.CANCEL
+                ? ConversationIntent.CANCEL
+                : ConversationIntent.SCHEDULE;
+        return continueAfterConsent(session, pending);
+    }
+
     private String startScheduling(ConversationSession session) {
         session.startScheduling();
-        return "Perfecto, vamos a agendar tu cita.\n\n¿Cuál es tu número de cédula?";
+        return "Perfecto, vamos a agendar tu cita.\n\n"
+                + "¿Cuál es tu número de cédula? Escríbela solo con números, sin puntos ni comas.";
     }
 
     private String startCancelling(ConversationSession session) {
         session.startCancellingAskCedula();
-        return "Vamos a cancelar una cita.\n\n¿Cuál es el número de cédula del paciente?";
+        return "Vamos a cancelar una cita.\n\n"
+                + "¿Cuál es el número de cédula del paciente? Escríbela solo con números, sin puntos ni comas.";
     }
 
     private String handleScheduleCedula(ConversationSession session, String text) {
@@ -207,7 +296,7 @@ public class ConversationService {
         try {
             cedula = CedulaValidator.normalizeAndValidate(text);
         } catch (PatientException exception) {
-            return exception.getMessage();
+            return rejectInvalid(session, exception.getMessage());
         }
 
         Optional<Patient> existing = patientService.findByCedula(cedula);
@@ -224,7 +313,7 @@ public class ConversationService {
         }
 
         session.cedulaReceivedForNewPatient(cedula);
-        return "Gracias. No te tenemos registrado aún.\n\n¿Cuál es tu nombre completo?";
+        return "Gracias. No te tenemos registrado aún.\n\n¿Cuál es tu nombre y apellido?";
     }
 
     private String handleCancelCedula(ConversationSession session, String text) {
@@ -232,7 +321,7 @@ public class ConversationService {
         try {
             cedula = CedulaValidator.normalizeAndValidate(text);
         } catch (PatientException exception) {
-            return exception.getMessage();
+            return rejectInvalid(session, exception.getMessage());
         }
 
         List<Appointment> appointments = appointmentService.listByCedula(cedula);
@@ -263,7 +352,7 @@ public class ConversationService {
 
     private String handleName(ConversationSession session, String text) {
         if (!StringUtils.hasText(text) || text.length() < 2) {
-            return "Por favor escribe tu nombre completo.";
+            return rejectInvalid(session, "Por favor escribe tu nombre y apellido.");
         }
 
         List<LocalDate> dates = appointmentService.listAvailableDates();
@@ -280,7 +369,11 @@ public class ConversationService {
     private String handleDateSelection(ConversationSession session, String text) {
         Integer selected = parseOption(text, session.dateOptions().size());
         if (selected == null) {
-            return offerDateOptions(session.phone(), "Opción inválida.\n\n", session.dateOptions());
+            return rejectInvalid(
+                    session,
+                    offerDateOptions(session.phone(), "Opción inválida.\n\n", session.dateOptions()),
+                    "Opción inválida. Responde con el número de la fecha."
+            );
         }
 
         LocalDate date = session.dateOptions().get(selected - 1);
@@ -331,12 +424,16 @@ public class ConversationService {
 
         Integer selected = parsePeriodOption(text);
         if (selected == null) {
-            return offerPeriodOptions(
-                    session.phone(),
-                    "Opción inválida.\n\n",
-                    session.selectedDate(),
-                    morning,
-                    afternoon
+            return rejectInvalid(
+                    session,
+                    offerPeriodOptions(
+                            session.phone(),
+                            "Opción inválida.\n\n",
+                            session.selectedDate(),
+                            morning,
+                            afternoon
+                    ),
+                    "Opción inválida. Responde 1 para mañana o 2 para tarde."
             );
         }
 
@@ -363,7 +460,10 @@ public class ConversationService {
         if (selected == null) {
             boolean canGoBack = hasBothPeriods(session.availableTimes());
             String label = inferPeriodLabel(session.timeOptions());
-            return "Opción inválida.\n\n" + formatTimeOptions(session.timeOptions(), label, canGoBack);
+            return rejectInvalid(
+                    session,
+                    "Opción inválida.\n\n" + formatTimeOptions(session.timeOptions(), label, canGoBack)
+            );
         }
 
         LocalTime time = session.timeOptions().get(selected - 1);
@@ -413,7 +513,7 @@ public class ConversationService {
     private String handleCancelSelection(ConversationSession session, String text) {
         Integer selected = parseOption(text, session.cancelCandidateIds().size());
         if (selected == null) {
-            return "Opción inválida. Responde con el número de la cita (ejemplo: 1).";
+            return rejectInvalid(session, "Opción inválida. Responde con el número de la cita (ejemplo: 1).");
         }
 
         try {
@@ -448,13 +548,13 @@ public class ConversationService {
             } else if (normalized.equals("no") || normalized.equals("n")) {
                 selected = 2;
             } else {
-                return """
+                return rejectInvalid(session, """
                         Opción inválida.
 
                         ¿Deseas reagendar?
                         1. Sí
                         2. No
-                        """.trim();
+                        """.trim());
             }
         }
 
@@ -511,7 +611,7 @@ public class ConversationService {
 
     private String formatPeriodOptions(List<LocalTime> morning, List<LocalTime> afternoon) {
         return """
-                ¿Prefieres en la mañana o en la tarde?
+                ¿Deseas agendar la cita en la mañana o en la tarde?
 
                 1. Mañana (%s - %s)
                 2. Tarde (%s - %s)
@@ -587,7 +687,7 @@ public class ConversationService {
     ) {
         String header = "Fecha: " + date.format(DATE_FORMAT) + "\n\n";
         String body = intro + header
-                + "¿Prefieres en la mañana o en la tarde?\n\n"
+                + PERIOD_PROMPT + "\n\n"
                 + "Mañana " + morning.getFirst().format(TIME_FORMAT)
                 + "–" + morning.getLast().format(TIME_FORMAT)
                 + " · Tarde " + afternoon.getFirst().format(TIME_FORMAT)
@@ -634,6 +734,38 @@ public class ConversationService {
             return value;
         }
         return value.substring(0, maxLength);
+    }
+
+    private String rejectInvalid(ConversationSession session, String retryMessage) {
+        return rejectInvalid(session, retryMessage, retryMessage);
+    }
+
+    private String rejectInvalid(ConversationSession session, String retryMessage, String fallbackText) {
+        session.registerInvalidAttempt();
+        if (session.invalidAttempts() >= MAX_INVALID_ATTEMPTS) {
+            session.reset();
+            return TOO_MANY_INVALID + MENU;
+        }
+        if (StringUtils.hasText(retryMessage)) {
+            return retryMessage;
+        }
+        return fallbackText;
+    }
+
+    private Integer parseConsentOption(String text) {
+        Integer selected = parseOption(text, 2);
+        if (selected != null) {
+            return selected;
+        }
+        String normalized = text == null ? "" : text.trim().toLowerCase(SPANISH)
+                .replace("á", "a");
+        if (normalized.equals("acepto") || normalized.equals("si") || normalized.equals("s")) {
+            return 1;
+        }
+        if (normalized.equals("no acepto") || normalized.equals("no") || normalized.equals("n")) {
+            return 2;
+        }
+        return null;
     }
 
     private Integer parsePeriodOption(String text) {

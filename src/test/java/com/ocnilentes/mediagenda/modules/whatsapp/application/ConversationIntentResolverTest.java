@@ -34,4 +34,12 @@ class ConversationIntentResolverTest {
     void shouldShowMenuForGreeting() {
         assertEquals(ConversationIntent.SHOW_MENU, resolver.resolve("Hola"));
     }
+
+    @Test
+    void shouldResolveExplicitMenuLabels() {
+        assertEquals(ConversationIntent.SCHEDULE, resolver.resolve("Agendar cita"));
+        assertEquals(ConversationIntent.CANCEL, resolver.resolve("Cancelar cita"));
+        assertEquals(ConversationIntent.INFORMATION, resolver.resolve("Otra información"));
+        assertEquals(ConversationIntent.INFORMATION, resolver.resolve("otra informacion"));
+    }
 }

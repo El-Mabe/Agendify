@@ -30,7 +30,7 @@ public class AppointmentService {
 
     private static final ZoneId CLINIC_ZONE = ZoneId.of("America/Bogota");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
-    private static final int MAX_AVAILABLE_DATES = 5;
+    private static final int MAX_AVAILABLE_DATES = 10;
     private static final int MAX_SEARCH_DAYS = 60;
 
     private final AppointmentRepository appointmentRepository;

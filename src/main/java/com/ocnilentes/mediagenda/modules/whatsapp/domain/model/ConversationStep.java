@@ -2,6 +2,7 @@ package com.ocnilentes.mediagenda.modules.whatsapp.domain.model;
 
 public enum ConversationStep {
     IDLE,
+    AWAITING_CONSENT,
     AWAITING_SCHEDULE_CEDULA,
     AWAITING_CANCEL_CEDULA,
     AWAITING_NAME,

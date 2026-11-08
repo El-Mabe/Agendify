@@ -135,19 +135,23 @@ function createMonthSheet_(spreadsheet, consultorio, month, schedule) {
     rows.push(['DIA', formatDate_(date), DAY_NAMES[date.getDay()], '', '', '', '']);
     rows.push(['HORA', 'NOMBRE', 'CEDULA', 'TELEFONO', 'OBSERVACION', 'ASISTENCIA', 'APPOINTMENT_ID']);
 
+    var morningStart = schedule.morningStart;
     var morningEnd = schedule.morningEnd;
     var lunch = schedule.lunch.slice();
     var afternoonStart = schedule.afternoonStart;
+    var afternoonEnd = schedule.afternoonEnd;
     if (consultorio === 'B' && date.getDay() === 6) {
+      morningStart = [8, 0];
       morningEnd = [12, 0];
       lunch = ['12:00', '12:20', '12:40'];
       afternoonStart = [13, 0];
+      afternoonEnd = [17, 0];
     }
-    appendSlots_(rows, schedule.morningStart, morningEnd);
+    appendSlots_(rows, morningStart, morningEnd);
     lunch.forEach(function (time) {
       rows.push([time, 'ALMUERZO', '', '', '', '', '']);
     });
-    appendSlots_(rows, afternoonStart, schedule.afternoonEnd);
+    appendSlots_(rows, afternoonStart, afternoonEnd);
     rows.push(['', '', '', '', '', '', '']);
   }
 
@@ -334,9 +338,11 @@ function applySaturdayLunchConsultorioBRemainingMonths_() {
     if (year !== YEAR || month < startMonth) {
       return;
     }
+    alignSaturdayHoursB_(sheet);
     var updated = markSaturdayLunchB_(sheet);
     applyAttendanceDropdownToSheet_(sheet);
     applyAttendanceRowColorsToSheet_(sheet);
+    applyAlmuerzoStyleToSheet_(sheet);
     processed.push(sheet.getName() + ' (' + updated + ' filas)');
   });
 
@@ -345,6 +351,65 @@ function applySaturdayLunchConsultorioBRemainingMonths_() {
       ? 'Almuerzo sábado 12-1 (B) aplicado en:\n' + processed.join('\n')
       : 'No se encontraron pestañas B_' + YEAR + ' del mes ' + startMonth + ' en adelante.'
   );
+}
+
+function alignSaturdayHoursB_(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 1) {
+    return;
+  }
+  var display = sheet.getRange(1, 1, lastRow, 1).getDisplayValues();
+  var saturdayHeaders = [];
+  var saturday = false;
+  for (var i = 0; i < display.length; i++) {
+    var marker = String(display[i][0] || '').trim().toUpperCase();
+    if (marker === 'DIA') {
+      saturday = String(sheet.getRange(i + 1, 3).getDisplayValue() || '').toUpperCase().indexOf('SABADO') >= 0;
+    } else if (saturday && marker === 'HORA') {
+      saturdayHeaders.push(i + 1);
+    }
+  }
+  for (var s = saturdayHeaders.length - 1; s >= 0; s--) {
+    alignOneSaturdayB_(sheet, saturdayHeaders[s]);
+  }
+}
+
+function alignOneSaturdayB_(sheet, headerRow) {
+  var lastRow = sheet.getLastRow();
+  var height = lastRow - headerRow + 1;
+  if (height < 2) {
+    return;
+  }
+  var values = sheet.getRange(headerRow, 1, height, 4).getDisplayValues();
+  var hasEight = false;
+  var rowsToDelete = [];
+  for (var i = 1; i < values.length; i++) {
+    var hora = String(values[i][0] || '').trim().toUpperCase();
+    if (hora === 'DIA' || (hora === '' && String(values[i][1] || '').trim() === '')) {
+      break;
+    }
+    var minutes = slotMinutes_(values[i][0]);
+    if (minutes === 8 * 60) {
+      hasEight = true;
+    }
+    if (minutes === 17 * 60 || minutes === 17 * 60 + 20 || minutes === 17 * 60 + 40) {
+      var occupied = String(values[i][1] || '').trim() || String(values[i][3] || '').trim();
+      if (!occupied) {
+        rowsToDelete.push(headerRow + i);
+      }
+    }
+  }
+  for (var d = rowsToDelete.length - 1; d >= 0; d--) {
+    sheet.deleteRow(rowsToDelete[d]);
+  }
+  if (!hasEight) {
+    sheet.insertRowsAfter(headerRow, 3);
+    sheet.getRange(headerRow + 1, 1, 3, 7).setValues([
+      ['8:00', '', '', '', '', '', ''],
+      ['8:20', '', '', '', '', '', ''],
+      ['8:40', '', '', '', '', '', '']
+    ]);
+  }
 }
 
 function markSaturdayLunchB_(sheet) {
@@ -366,13 +431,12 @@ function markSaturdayLunchB_(sheet) {
     if (!saturday) {
       continue;
     }
-    if (isTime_(hora, '12:00') || isTime_(hora, '12:20') || isTime_(hora, '12:40')) {
-      if (!nombre) {
-        values[i][1] = 'ALMUERZO';
-        updated++;
-      }
+    var minutes = slotMinutes_(hora);
+    if ((minutes === 12 * 60 || minutes === 12 * 60 + 20 || minutes === 12 * 60 + 40) && !nombre) {
+      values[i][1] = 'ALMUERZO';
+      updated++;
     }
-    if ((isTime_(hora, '13:00') || isTime_(hora, '13:20') || isTime_(hora, '13:40'))
+    if ((minutes === 13 * 60 || minutes === 13 * 60 + 20 || minutes === 13 * 60 + 40)
         && nombre.toUpperCase() === 'ALMUERZO') {
       values[i][1] = '';
       updated++;
@@ -385,21 +449,57 @@ function markSaturdayLunchB_(sheet) {
   return updated;
 }
 
+/**
+ * Pinta filas ALMUERZO en rojo y quita el rojo de huecos (p. ej. sábado B 13:00).
+ * No borra citas. Correr en A y B.
+ */
+function applyAlmuerzoColorsRemainingMonths_() {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var now = new Date();
+  var startMonth = now.getFullYear() === YEAR ? now.getMonth() + 1 : 1;
+  var processed = [];
+
+  spreadsheet.getSheets().forEach(function (sheet) {
+    var match = /^([AB])_(\d{4})_(\d{2})$/.exec(sheet.getName());
+    if (!match) {
+      return;
+    }
+    var year = parseInt(match[2], 10);
+    var month = parseInt(match[3], 10);
+    if (year !== YEAR || month < startMonth) {
+      return;
+    }
+    applyAlmuerzoStyleToSheet_(sheet);
+    processed.push(sheet.getName());
+  });
+
+  SpreadsheetApp.getUi().alert(
+    processed.length
+      ? 'Colores de almuerzo aplicados en:\n' + processed.join('\n')
+      : 'No se encontraron pestañas ' + YEAR + ' del mes ' + startMonth + ' en adelante.'
+  );
+}
+
 function applyAlmuerzoStyleToSheet_(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 1) {
     return;
   }
-  var values = sheet.getRange(1, 1, lastRow, 2).getDisplayValues();
-  for (var i = 0; i < values.length; i++) {
-    var nombre = String(values[i][1] || '').trim().toUpperCase();
+  var display = sheet.getRange(1, 1, lastRow, 2).getDisplayValues();
+  var raw = sheet.getRange(1, 1, lastRow, 2).getValues();
+  for (var i = 0; i < display.length; i++) {
+    var nombre = String(display[i][1] || '').trim().toUpperCase();
+    var hora = display[i][0] != null && String(display[i][0]).trim() !== ''
+      ? display[i][0]
+      : raw[i][0];
     var row = sheet.getRange(i + 1, 1, 1, 6);
     if (nombre === 'ALMUERZO') {
       row.setBackground(ALMUERZO_BACKGROUND);
       row.setFontColor(ALMUERZO_FONT);
       row.setFontWeight('bold');
-    } else if (isBookableSlotRow_(values[i][0], values[i][1])) {
-      row.setBackground(null);
+    } else if (isBookableSlotRow_(hora, display[i][1])) {
+      // #FFFFFF: setBackground(null) a veces deja el rojo anterior.
+      row.setBackground('#FFFFFF');
       row.setFontColor('#000000');
       row.setFontWeight('normal');
     }
@@ -513,8 +613,30 @@ function isBookableSlotRow_(hora, nombre) {
   if (name === 'ALMUERZO') {
     return false;
   }
-  var text = String(hora == null ? '' : hora).trim();
-  return /^\d{1,2}:\d{2}(:\d{2})?(\s*[AaPp]\.?[Mm]\.?)?$/.test(text);
+  return slotMinutes_(hora) >= 0;
+}
+
+function slotMinutes_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return value.getHours() * 60 + value.getMinutes();
+  }
+  var text = String(value == null ? '' : value).trim().toUpperCase();
+  if (!text || text === 'DIA' || text === 'HORA') {
+    return -1;
+  }
+  var match = text.match(/(\d{1,2})\s*[:.H]\s*(\d{2})/);
+  if (!match) {
+    return -1;
+  }
+  var hour = parseInt(match[1], 10);
+  var minute = parseInt(match[2], 10);
+  if (text.indexOf('P') >= 0 && hour < 12) {
+    hour += 12;
+  }
+  if (text.indexOf('A') >= 0 && hour === 12) {
+    hour = 0;
+  }
+  return hour * 60 + minute;
 }
 
 function appendSlots_(rows, startHm, endHm) {

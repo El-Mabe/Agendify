@@ -31,10 +31,16 @@ class ClinicScheduleTest {
         assertFalse(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(12, 0)));
         assertFalse(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(12, 20)));
         assertFalse(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(12, 40)));
+        assertTrue(ClinicSchedule.offers(Consultorio.A, saturday, LocalTime.of(8, 0)));
+        assertTrue(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(8, 0)));
         assertTrue(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(11, 40)));
         assertTrue(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(13, 0)));
-        assertTrue(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(14, 0)));
+        assertTrue(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(16, 40)));
+        assertFalse(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(17, 0)));
+        assertFalse(ClinicSchedule.offers(Consultorio.B, saturday, LocalTime.of(17, 40)));
+        assertFalse(ClinicSchedule.offers(Consultorio.B, LocalDate.of(2026, 11, 13), LocalTime.of(8, 0)));
         assertFalse(ClinicSchedule.offers(Consultorio.B, LocalDate.of(2026, 11, 13), LocalTime.of(13, 0)));
         assertTrue(ClinicSchedule.offers(Consultorio.B, LocalDate.of(2026, 11, 13), LocalTime.of(12, 0)));
+        assertTrue(ClinicSchedule.offers(Consultorio.B, LocalDate.of(2026, 11, 13), LocalTime.of(17, 0)));
     }
 }

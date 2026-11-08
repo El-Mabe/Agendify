@@ -211,8 +211,12 @@ class AppointmentServiceTest {
         assertFalse(times.contains(LocalTime.of(12, 0)));
         assertFalse(times.contains(LocalTime.of(12, 20)));
         assertFalse(times.contains(LocalTime.of(12, 40)));
+        assertTrue(times.contains(LocalTime.of(8, 0)));
         assertTrue(times.contains(LocalTime.of(11, 40)));
         assertTrue(times.contains(LocalTime.of(13, 0)));
+        assertTrue(times.contains(LocalTime.of(16, 40)));
+        assertFalse(times.contains(LocalTime.of(17, 0)));
+        assertFalse(times.contains(LocalTime.of(17, 40)));
     }
 
     private LocalDate nextWeekday(LocalDate start) {

@@ -27,11 +27,15 @@ public final class ClinicSchedule {
                     generateSlots(LocalTime.of(13, 0), LocalTime.of(17, 0))
             );
             case B -> {
-                LocalTime morningEnd = saturdaySharedLunch ? LocalTime.of(12, 0) : LocalTime.of(13, 0);
-                LocalTime afternoonStart = saturdaySharedLunch ? LocalTime.of(13, 0) : LocalTime.of(14, 0);
+                if (saturdaySharedLunch) {
+                    yield merge(
+                            generateSlots(LocalTime.of(8, 0), LocalTime.of(12, 0)),
+                            generateSlots(LocalTime.of(13, 0), LocalTime.of(17, 0))
+                    );
+                }
                 yield merge(
-                        generateSlots(LocalTime.of(9, 0), morningEnd),
-                        generateSlots(afternoonStart, LocalTime.of(18, 0))
+                        generateSlots(LocalTime.of(9, 0), LocalTime.of(13, 0)),
+                        generateSlots(LocalTime.of(14, 0), LocalTime.of(18, 0))
                 );
             }
         };

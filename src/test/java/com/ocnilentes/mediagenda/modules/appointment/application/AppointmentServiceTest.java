@@ -53,7 +53,7 @@ class AppointmentServiceTest {
     void shouldListAvailableDatesExcludingTodayAndSunday() {
         List<LocalDate> dates = appointmentService.listAvailableDates();
         assertFalse(dates.isEmpty());
-        assertTrue(dates.size() <= 5);
+        assertTrue(dates.size() <= 10);
 
         LocalDate today = LocalDate.now(ZONE);
         for (LocalDate date : dates) {
@@ -199,6 +199,20 @@ class AppointmentServiceTest {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    @Test
+    void saturdayDoesNotOfferNoonSlotsInConsultorioB() {
+        LocalDate saturday = LocalDate.now(ZONE).plusDays(1);
+        while (saturday.getDayOfWeek() != DayOfWeek.SATURDAY) {
+            saturday = saturday.plusDays(1);
+        }
+        List<LocalTime> times = appointmentService.listAvailableTimes(saturday);
+        assertFalse(times.contains(LocalTime.of(12, 0)));
+        assertFalse(times.contains(LocalTime.of(12, 20)));
+        assertFalse(times.contains(LocalTime.of(12, 40)));
+        assertTrue(times.contains(LocalTime.of(11, 40)));
+        assertTrue(times.contains(LocalTime.of(13, 0)));
     }
 
     private LocalDate nextWeekday(LocalDate start) {

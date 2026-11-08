@@ -5,7 +5,7 @@ import org.springframework.util.StringUtils;
 /**
  * Normaliza números colombianos para la Cloud API (E.164 sin +).
  */
-final class WhatsappPhoneNormalizer {
+public final class WhatsappPhoneNormalizer {
 
     private WhatsappPhoneNormalizer() {
     }

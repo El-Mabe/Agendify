@@ -12,6 +12,7 @@ class AttendanceStatusTest {
         assertEquals(AttendanceStatus.ASISTIO, AttendanceStatus.parse("Asistió").orElseThrow());
         assertEquals(AttendanceStatus.CONFIRMO, AttendanceStatus.parse("confirmo").orElseThrow());
         assertEquals(AttendanceStatus.CANCELO, AttendanceStatus.parse("CANCELO").orElseThrow());
+        assertEquals(AttendanceStatus.NO_ASISTIO, AttendanceStatus.parse("NO ASISTIO").orElseThrow());
         assertTrue(AttendanceStatus.parse("").isEmpty());
         assertTrue(AttendanceStatus.parse("OTRO").isEmpty());
     }

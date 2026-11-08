@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -136,6 +137,70 @@ class ReminderDispatchServiceTest {
         assertEquals(0, result.sent());
         assertEquals(1, result.skipped());
         verify(whatsappMessageClient, never()).sendInteractiveButtons(anyString(), anyString(), anyList());
+    }
+
+    @Test
+    void shouldSkipReminderWhenPhoneIsAName() {
+        LocalDate tomorrow = LocalDate.now(ZONE).plusDays(1);
+        Appointment appointment = new Appointment(
+                "A|" + tomorrow + "|10:00",
+                tomorrow,
+                LocalTime.of(10, 0),
+                Consultorio.A,
+                "Julian",
+                "1234567890",
+                "Felipe",
+                null,
+                12
+        );
+
+        when(appointmentService.listByDate(tomorrow)).thenReturn(List.of(appointment));
+        when(reminderRepository.findByAppointmentKeyAndChannel(appointment.id(), ReminderChannel.DAY_BEFORE))
+                .thenReturn(Optional.empty());
+        when(reminderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReminderDispatchService.ReminderRunResult result = service.dispatchDueReminders(true);
+
+        assertEquals(0, result.sent());
+        assertEquals(1, result.skipped());
+        assertEquals(0, result.failed());
+        verify(whatsappMessageClient, never()).sendInteractiveButtons(anyString(), anyString(), anyList());
+        ArgumentCaptor<AppointmentReminder> captor = ArgumentCaptor.forClass(AppointmentReminder.class);
+        verify(reminderRepository).save(captor.capture());
+        assertEquals(ReminderStatus.FAILED, captor.getValue().status());
+        assertTrue(captor.getValue().errorMessage().contains("Teléfono inválido"));
+    }
+
+    @Test
+    void shouldNormalizeLocalMobileBeforeSendingToMeta() {
+        LocalDate tomorrow = LocalDate.now(ZONE).plusDays(1);
+        Appointment appointment = new Appointment(
+                "A|" + tomorrow + "|10:00",
+                tomorrow,
+                LocalTime.of(10, 0),
+                Consultorio.A,
+                "Julian",
+                "1234567890",
+                "3183108750",
+                null,
+                12
+        );
+
+        when(appointmentService.listByDate(tomorrow)).thenReturn(List.of(appointment));
+        when(reminderRepository.findByAppointmentKeyAndChannel(appointment.id(), ReminderChannel.DAY_BEFORE))
+                .thenReturn(Optional.empty());
+        when(whatsappMessageClient.sendInteractiveButtons(anyString(), anyString(), anyList()))
+                .thenReturn("wamid.reminder");
+        when(reminderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReminderDispatchService.ReminderRunResult result = service.dispatchDueReminders(true);
+
+        assertEquals(1, result.sent());
+        verify(whatsappMessageClient).sendInteractiveButtons(
+                eq("573183108750"),
+                anyString(),
+                anyList()
+        );
     }
 
     @Test

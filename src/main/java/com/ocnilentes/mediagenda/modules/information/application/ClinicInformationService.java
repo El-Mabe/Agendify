@@ -23,15 +23,13 @@ public class ClinicInformationService {
             Calle 15#8-103, Centro comercial Petecuy, Local 119, Torre A
 
             📞 Teléfono:
-            (2) 888-1500
+            602 3481840
 
             🕐 Horario de atención:
             Lunes a Viernes: 8:00 a.m. – 6:00 p.m.
             Sábados: 8:00 a.m. – 5:00 p.m.
             Domingo: cerrado
             Festivos: cerrado
-
-            Escribe *menú* para volver a las opciones. 💙
             """.trim();
 
     private static final Map<String, String> DEFAULT_INFO = Map.of(

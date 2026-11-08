@@ -6,6 +6,7 @@ import com.ocnilentes.mediagenda.modules.reminder.domain.model.AppointmentRemind
 import com.ocnilentes.mediagenda.modules.reminder.domain.model.ReminderChannel;
 import com.ocnilentes.mediagenda.modules.reminder.domain.model.ReminderStatus;
 import com.ocnilentes.mediagenda.modules.reminder.domain.port.AppointmentReminderRepository;
+import com.ocnilentes.mediagenda.modules.whatsapp.application.WhatsappPhoneNormalizer;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.exception.WhatsappApiException;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.port.WhatsappMessageClient;
 import com.ocnilentes.mediagenda.shared.config.ReminderProperties;
@@ -67,9 +68,7 @@ public class ReminderDispatchService {
         }
 
         LocalDate targetDate = today.plusDays(1);
-        List<Appointment> appointments = appointmentService.listByDate(targetDate).stream()
-                .filter(appointment -> StringUtils.hasText(appointment.phone()))
-                .toList();
+        List<Appointment> appointments = appointmentService.listByDate(targetDate);
 
         int sent = 0;
         int skipped = 0;
@@ -89,13 +88,27 @@ public class ReminderDispatchService {
                 }
             }
 
+            String destination = destinationPhone(appointment.phone());
+            if (destination == null) {
+                skipped++;
+                log.warn(
+                        "Skipping reminder appointment={} phone='{}' (not a WhatsApp number; not sent to Meta)",
+                        appointment.id(),
+                        appointment.phone()
+                );
+                if (existing.isEmpty()) {
+                    reminderRepository.save(invalidPhoneReminder(appointment, channel));
+                }
+                continue;
+            }
+
             try {
-                String metaMessageId = sendReminder(appointment);
+                String metaMessageId = sendReminder(appointment, destination);
                 AppointmentReminder reminder = new AppointmentReminder(
                         existing.map(AppointmentReminder::id).orElse(null),
                         appointment.id(),
                         channel,
-                        appointment.phone(),
+                        destination,
                         appointment.patientName() == null ? "" : appointment.patientName(),
                         appointment.cedula(),
                         appointment.date(),
@@ -144,7 +157,7 @@ public class ReminderDispatchService {
         return new ReminderRunResult(true, true, targetDate, appointments.size(), sent, skipped, failed, errors);
     }
 
-    private String sendReminder(Appointment appointment) {
+    private String sendReminder(Appointment appointment, String destination) {
         if (properties.isTemplateMode()) {
             if (!StringUtils.hasText(properties.templateName())) {
                 throw new IllegalStateException(
@@ -152,7 +165,7 @@ public class ReminderDispatchService {
                 );
             }
             return whatsappMessageClient.sendTemplate(
-                    appointment.phone(),
+                    destination,
                     properties.templateName(),
                     properties.templateLanguage(),
                     ReminderPayloadFactory.templateBodyParameters(appointment),
@@ -162,7 +175,7 @@ public class ReminderDispatchService {
 
         try {
             return whatsappMessageClient.sendInteractiveButtons(
-                    appointment.phone(),
+                    destination,
                     ReminderPayloadFactory.buildBody(appointment),
                     ReminderPayloadFactory.buttonsFor(appointment)
             );
@@ -170,6 +183,31 @@ public class ReminderDispatchService {
             // Outside 24h window Meta rejects interactive; keep failure visible for TEMPLATE setup.
             throw exception;
         }
+    }
+
+    private static String destinationPhone(String rawPhone) {
+        if (!WhatsappPhoneNormalizer.isLikelyPhone(rawPhone)) {
+            return null;
+        }
+        return WhatsappPhoneNormalizer.normalize(rawPhone);
+    }
+
+    private AppointmentReminder invalidPhoneReminder(Appointment appointment, ReminderChannel channel) {
+        return new AppointmentReminder(
+                null,
+                appointment.id(),
+                channel,
+                appointment.phone() == null ? "" : appointment.phone(),
+                appointment.patientName() == null ? "" : appointment.patientName(),
+                appointment.cedula(),
+                appointment.date(),
+                appointment.time(),
+                ReminderStatus.FAILED,
+                null,
+                "Teléfono inválido; no se envió a Meta",
+                null,
+                null
+        );
     }
 
     private String truncate(String value, int max) {

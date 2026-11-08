@@ -91,7 +91,7 @@ class ReminderResponseServiceTest {
         ArgumentCaptor<AppointmentReminder> captor = ArgumentCaptor.forClass(AppointmentReminder.class);
         verify(reminderRepository).save(captor.capture());
         assertEquals(ReminderStatus.CONFIRMED, captor.getValue().status());
-        verify(whatsappMessageClient).sendTextMessage(eq("573000000001"), any());
+        verify(whatsappMessageClient).sendInteractiveButtons(eq("573000000001"), any(), any());
     }
 
     @Test

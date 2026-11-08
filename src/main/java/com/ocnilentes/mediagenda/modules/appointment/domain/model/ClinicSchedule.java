@@ -1,5 +1,7 @@
 package com.ocnilentes.mediagenda.modules.appointment.domain.model;
 
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -14,15 +16,24 @@ public final class ClinicSchedule {
     }
 
     public static List<LocalTime> slotsFor(Consultorio consultorio) {
+        return slotsFor(consultorio, null);
+    }
+
+    public static List<LocalTime> slotsFor(Consultorio consultorio, LocalDate date) {
+        boolean saturdaySharedLunch = date != null && date.getDayOfWeek() == DayOfWeek.SATURDAY;
         return switch (consultorio) {
             case A -> merge(
                     generateSlots(LocalTime.of(8, 0), LocalTime.of(12, 0)),
                     generateSlots(LocalTime.of(13, 0), LocalTime.of(17, 0))
             );
-            case B -> merge(
-                    generateSlots(LocalTime.of(9, 0), LocalTime.of(13, 0)),
-                    generateSlots(LocalTime.of(14, 0), LocalTime.of(18, 0))
-            );
+            case B -> {
+                LocalTime morningEnd = saturdaySharedLunch ? LocalTime.of(12, 0) : LocalTime.of(13, 0);
+                LocalTime afternoonStart = saturdaySharedLunch ? LocalTime.of(13, 0) : LocalTime.of(14, 0);
+                yield merge(
+                        generateSlots(LocalTime.of(9, 0), morningEnd),
+                        generateSlots(afternoonStart, LocalTime.of(18, 0))
+                );
+            }
         };
     }
 
@@ -35,7 +46,11 @@ public final class ClinicSchedule {
     }
 
     public static boolean offers(Consultorio consultorio, LocalTime time) {
-        return slotsFor(consultorio).contains(time);
+        return offers(consultorio, null, time);
+    }
+
+    public static boolean offers(Consultorio consultorio, LocalDate date, LocalTime time) {
+        return slotsFor(consultorio, date).contains(time);
     }
 
     private static List<LocalTime> generateSlots(LocalTime startInclusive, LocalTime endExclusive) {

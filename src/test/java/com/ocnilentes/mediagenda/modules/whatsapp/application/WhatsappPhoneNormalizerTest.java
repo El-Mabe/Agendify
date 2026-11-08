@@ -29,6 +29,13 @@ class WhatsappPhoneNormalizerTest {
     }
 
     @Test
+    void isLikelyPhone_rejectsNamesAndEmpty() {
+        assertThat(WhatsappPhoneNormalizer.isLikelyPhone("Felipe")).isFalse();
+        assertThat(WhatsappPhoneNormalizer.isLikelyPhone("")).isFalse();
+        assertThat(WhatsappPhoneNormalizer.normalize("Felipe")).isNull();
+    }
+
+    @Test
     void normalize_keepsMetaUserId() {
         assertThat(WhatsappPhoneNormalizer.normalize("CO.1142953118206038"))
                 .isEqualTo("CO.1142953118206038");

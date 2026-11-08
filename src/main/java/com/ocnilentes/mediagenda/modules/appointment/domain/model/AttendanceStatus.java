@@ -9,7 +9,8 @@ import java.util.Optional;
 public enum AttendanceStatus {
     CONFIRMO,
     CANCELO,
-    ASISTIO;
+    ASISTIO,
+    NO_ASISTIO;
 
     public static Optional<AttendanceStatus> parse(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -21,7 +22,8 @@ public enum AttendanceStatus {
                 .replace("Á", "A")
                 .replace("É", "E")
                 .replace("Í", "I")
-                .replace("Ú", "U");
+                .replace("Ú", "U")
+                .replace(' ', '_');
         try {
             return Optional.of(AttendanceStatus.valueOf(normalized));
         } catch (IllegalArgumentException exception) {

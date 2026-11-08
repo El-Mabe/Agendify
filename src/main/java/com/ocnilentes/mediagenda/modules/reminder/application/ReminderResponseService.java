@@ -7,6 +7,7 @@ import com.ocnilentes.mediagenda.modules.reminder.domain.model.AppointmentRemind
 import com.ocnilentes.mediagenda.modules.reminder.domain.model.ReminderStatus;
 import com.ocnilentes.mediagenda.modules.reminder.domain.port.AppointmentReminderRepository;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.IncomingButtonReply;
+import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ReplyButton;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.port.WhatsappMessageClient;
 import java.time.Instant;
 import java.util.Comparator;
@@ -21,6 +22,7 @@ import org.springframework.util.StringUtils;
 public class ReminderResponseService {
 
     private static final Logger log = LoggerFactory.getLogger(ReminderResponseService.class);
+    private static final List<ReplyButton> MENU_ONLY = List.of(new ReplyButton("menu", "Menú"));
 
     private final AppointmentReminderRepository reminderRepository;
     private final AppointmentService appointmentService;
@@ -55,16 +57,13 @@ public class ReminderResponseService {
 
         Optional<AppointmentReminder> reminder = resolveReminder(reply.from(), buttonId);
         if (reminder.isEmpty()) {
-            whatsappMessageClient.sendTextMessage(
-                    reply.from(),
-                    "No encontramos un recordatorio pendiente asociado a esta cita.\n\nEscribe *menú* para ver opciones."
-            );
+            sendWithMenu(reply.from(), "No encontramos un recordatorio pendiente asociado a esta cita.");
             return true;
         }
 
         AppointmentReminder current = reminder.get();
         if (current.status() == ReminderStatus.CONFIRMED || current.status() == ReminderStatus.CANCELLED) {
-            whatsappMessageClient.sendTextMessage(
+            sendWithMenu(
                     reply.from(),
                     "Esta cita ya fue " + (current.status() == ReminderStatus.CONFIRMED ? "confirmada" : "cancelada") + "."
             );
@@ -82,7 +81,7 @@ public class ReminderResponseService {
                 );
             }
             reminderRepository.save(withStatus(current, ReminderStatus.CONFIRMED));
-            whatsappMessageClient.sendTextMessage(
+            sendWithMenu(
                     reply.from(),
                     """
                             ✅ Cita confirmada.
@@ -103,7 +102,7 @@ public class ReminderResponseService {
         try {
             Appointment cancelled = appointmentService.cancelByPhone(current.appointmentKey(), reply.from());
             reminderRepository.save(withStatus(current, ReminderStatus.CANCELLED));
-            whatsappMessageClient.sendTextMessage(
+            sendWithMenu(
                     reply.from(),
                     """
                             ✅ Cita cancelada.
@@ -111,7 +110,7 @@ public class ReminderResponseService {
                             Fecha: %s
                             Hora: %s
 
-                            Si deseas agendar otra, escribe *menú*.
+                            Si deseas agendar otra, pulsa Menú.
                             """.formatted(
                             ReminderPayloadFactory.formatDate(cancelled.date()),
                             ReminderPayloadFactory.formatTime(cancelled.time())
@@ -119,12 +118,18 @@ public class ReminderResponseService {
             );
             log.info("Reminder cancelled appointmentKey={} phone={}", current.appointmentKey(), reply.from());
         } catch (AppointmentException exception) {
-            whatsappMessageClient.sendTextMessage(
-                    reply.from(),
-                    exception.getMessage() + "\n\nEscribe *menú* para cancelar desde el menú."
-            );
+            sendWithMenu(reply.from(), exception.getMessage());
         }
         return true;
+    }
+
+    private void sendWithMenu(String to, String body) {
+        try {
+            whatsappMessageClient.sendInteractiveButtons(to, body, MENU_ONLY);
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to text menu hint to={}", to, exception);
+            whatsappMessageClient.sendTextMessage(to, body);
+        }
     }
 
     private Optional<AppointmentReminder> resolveReminder(String phone, String buttonId) {

@@ -60,10 +60,28 @@ public class ConversationService {
 
             Responde con el número o pulsa una opción.""";
 
+    private static final int INTERACTIVE_BODY_MAX = 1024;
     private static final List<ReplyButton> MENU_BUTTONS = List.of(
             new ReplyButton("1", "Agendar cita"),
             new ReplyButton("2", "Cancelar cita"),
             new ReplyButton("3", "Otra información")
+    );
+    private static final List<ReplyButton> MENU_ONLY_BUTTONS = List.of(
+            new ReplyButton("menu", "Menú")
+    );
+    private static final List<ReplyButton> BACK_AND_MENU_BUTTONS = List.of(
+            new ReplyButton("atras", "Atrás"),
+            new ReplyButton("menu", "Menú")
+    );
+    private static final List<ReplyButton> RESCHEDULE_BUTTONS = List.of(
+            new ReplyButton("1", "Sí"),
+            new ReplyButton("2", "No"),
+            new ReplyButton("menu", "Menú")
+    );
+    private static final List<ReplyButton> PERIOD_BUTTONS = List.of(
+            new ReplyButton("1", "Mañana"),
+            new ReplyButton("2", "Tarde"),
+            new ReplyButton("menu", "Menú")
     );
 
     private static final String IDLE_EXPIRED_NOTICE = """
@@ -203,7 +221,10 @@ public class ConversationService {
             case SHOW_MENU -> offerMenu(session.phone(), "");
             case SCHEDULE -> startScheduling(session);
             case CANCEL -> startCancelling(session);
-            case INFORMATION -> clinicInformationService.buildInformationMessage();
+            case INFORMATION -> {
+                String info = clinicInformationService.buildInformationMessage();
+                yield sendWithButtons(session.phone(), info, MENU_ONLY_BUTTONS, info);
+            }
         };
     }
 
@@ -227,12 +248,27 @@ public class ConversationService {
 
     private String offerMenu(String to, String intro) {
         String body = StringUtils.hasText(intro) ? intro.trim() + "\n\n" + MENU_BODY : MENU_BODY;
+        return sendWithButtons(to, body, MENU_BUTTONS, StringUtils.hasText(intro)
+                ? intro.trim() + "\n\n" + MENU_FALLBACK
+                : MENU_FALLBACK);
+    }
+
+    private String sendWithMenu(String to, String body) {
+        return sendWithButtons(to, body, MENU_ONLY_BUTTONS, body);
+    }
+
+    private String sendWithButtons(String to, String body, List<ReplyButton> buttons, String textFallback) {
         try {
-            whatsappMessageClient.sendInteractiveButtons(to, body, MENU_BUTTONS);
+            if (body != null && body.length() <= INTERACTIVE_BODY_MAX) {
+                whatsappMessageClient.sendInteractiveButtons(to, body, buttons);
+                return null;
+            }
+            whatsappMessageClient.sendTextMessage(to, body);
+            whatsappMessageClient.sendInteractiveButtons(to, "Pulsa una opción.", buttons);
             return null;
         } catch (RuntimeException exception) {
-            log.warn("Falling back to numbered menu to={}", to, exception);
-            return StringUtils.hasText(intro) ? intro.trim() + "\n\n" + MENU_FALLBACK : MENU_FALLBACK;
+            log.warn("Falling back to text options to={}", to, exception);
+            return textFallback;
         }
     }
 
@@ -261,7 +297,7 @@ public class ConversationService {
             List<LocalDate> dates = appointmentService.listAvailableDates();
             if (dates.isEmpty()) {
                 session.reset();
-                return "No hay fechas disponibles en este momento.\n\nEscribe *menú* para volver.";
+                return sendWithMenu(session.phone(), "No hay fechas disponibles en este momento.");
             }
             Patient patient = existing.get();
             patientService.touchPhone(cedula, session.phone());
@@ -284,27 +320,11 @@ public class ConversationService {
         List<Appointment> appointments = appointmentService.listByCedula(cedula);
         if (appointments.isEmpty()) {
             session.reset();
-            return "No encontramos citas para esa cédula.\n\nEscribe *menú* para ver opciones.";
+            return sendWithMenu(session.phone(), "No encontramos citas para esa cédula.");
         }
 
         session.startCancelling(cedula, appointments.stream().map(Appointment::id).toList());
-
-        StringBuilder builder = new StringBuilder("Estas son las citas encontradas:\n\n");
-        for (int index = 0; index < appointments.size(); index++) {
-            Appointment appointment = appointments.get(index);
-            builder.append(index + 1)
-                    .append(". ")
-                    .append(appointment.date().format(DATE_FORMAT))
-                    .append(" ")
-                    .append(appointment.time().format(TIME_FORMAT))
-                    .append(" - ")
-                    .append(appointment.patientName())
-                    .append(" (Consultorio ")
-                    .append(appointment.consultorio().name())
-                    .append(")\n");
-        }
-        builder.append("\nResponde con el número de la cita que deseas cancelar.");
-        return builder.toString();
+        return offerCancelOptions(session.phone(), appointments);
     }
 
     private String handleName(ConversationSession session, String text) {
@@ -315,7 +335,7 @@ public class ConversationService {
         List<LocalDate> dates = appointmentService.listAvailableDates();
         if (dates.isEmpty()) {
             session.reset();
-            return "No hay fechas disponibles en este momento.\n\nEscribe *menú* para volver.";
+            return sendWithMenu(session.phone(), "No hay fechas disponibles en este momento.");
         }
 
         patientService.registerOrUpdate(session.cedula(), text, session.phone());
@@ -367,7 +387,7 @@ public class ConversationService {
 
         if (morning.isEmpty() && afternoon.isEmpty()) {
             session.reset();
-            return "Ya no hay horarios para esa fecha.\n\nEscribe *menú* para volver.";
+            return sendWithMenu(session.phone(), "Ya no hay horarios para esa fecha.");
         }
 
         // Si solo queda una franja (p. ej. se llenó la otra), saltamos a horarios.
@@ -375,8 +395,7 @@ public class ConversationService {
             List<LocalTime> only = morning.isEmpty() ? afternoon : morning;
             String label = morning.isEmpty() ? "tarde" : "mañana";
             session.timePeriodSelected(only);
-            return "Fecha: " + session.selectedDate().format(DATE_FORMAT) + "\n\n"
-                    + formatTimeOptions(only, label, false);
+            return offerTimeOptions(session, only, label, false);
         }
 
         Integer selected = parsePeriodOption(text);
@@ -397,8 +416,7 @@ public class ConversationService {
         List<LocalTime> chosen = selected == 1 ? morning : afternoon;
         String label = selected == 1 ? "mañana" : "tarde";
         session.timePeriodSelected(chosen);
-        return "Fecha: " + session.selectedDate().format(DATE_FORMAT) + "\n\n"
-                + formatTimeOptions(chosen, label, true);
+        return offerTimeOptions(session, chosen, label, true);
     }
 
     private String handleTimeSelection(ConversationSession session, String text) {
@@ -419,7 +437,8 @@ public class ConversationService {
             String label = inferPeriodLabel(session.timeOptions());
             return rejectInvalid(
                     session,
-                    "Opción inválida.\n\n" + formatTimeOptions(session.timeOptions(), label, canGoBack)
+                    offerTimeOptions(session, session.timeOptions(), label, canGoBack),
+                    "Opción inválida. Responde con el número de la hora."
             );
         }
 
@@ -438,7 +457,7 @@ public class ConversationService {
                     session.phone()
             );
             session.clearAfterCompletion();
-            return """
+            return sendWithMenu(session.phone(), """
                     ✅ ¡Cita agendada con éxito!
 
                     👤 Nombre: %s
@@ -454,16 +473,15 @@ public class ConversationService {
                     - Si estás en embarazo, no se recomienda realizar el examen de optometría.
 
                     ¡Gracias por elegirnos! 💙
-                    Escribe *menú* para más opciones.
                     """.formatted(
                     appointment.patientName(),
                     appointment.cedula(),
                     appointment.date().format(DATE_FORMAT),
                     appointment.time().format(TIME_FORMAT)
-            ).trim();
+            ).trim());
         } catch (AppointmentException exception) {
             session.reset();
-            return exception.getMessage() + "\n\nEscribe *menú* para volver a intentar.";
+            return sendWithMenu(session.phone(), exception.getMessage());
         }
     }
 
@@ -477,22 +495,37 @@ public class ConversationService {
             String appointmentId = session.cancelCandidateIds().get(selected - 1);
             Appointment cancelled = appointmentService.cancel(appointmentId, session.cedula());
             session.awaitRescheduleDecision(cancelled.patientName(), cancelled.cedula());
-            return """
-                    ✅ Cita cancelada.
+            return sendWithButtons(
+                    session.phone(),
+                    """
+                            ✅ Cita cancelada.
 
-                    Fecha: %s
-                    Hora: %s
+                            Fecha: %s
+                            Hora: %s
 
-                    ¿Deseas reagendar?
-                    1. Sí
-                    2. No
-                    """.formatted(
-                    cancelled.date().format(DATE_FORMAT),
-                    cancelled.time().format(TIME_FORMAT)
-            ).trim();
+                            ¿Deseas reagendar?
+                            """.formatted(
+                            cancelled.date().format(DATE_FORMAT),
+                            cancelled.time().format(TIME_FORMAT)
+                    ).trim(),
+                    RESCHEDULE_BUTTONS,
+                    """
+                            ✅ Cita cancelada.
+
+                            Fecha: %s
+                            Hora: %s
+
+                            ¿Deseas reagendar?
+                            1. Sí
+                            2. No
+                            """.formatted(
+                            cancelled.date().format(DATE_FORMAT),
+                            cancelled.time().format(TIME_FORMAT)
+                    ).trim()
+            );
         } catch (AppointmentException exception) {
             session.reset();
-            return exception.getMessage() + "\n\nEscribe *menú* para volver.";
+            return sendWithMenu(session.phone(), exception.getMessage());
         }
     }
 
@@ -505,19 +538,28 @@ public class ConversationService {
             } else if (normalized.equals("no") || normalized.equals("n")) {
                 selected = 2;
             } else {
-                return rejectInvalid(session, """
-                        Opción inválida.
+                return rejectInvalid(
+                        session,
+                        sendWithButtons(
+                                session.phone(),
+                                "Opción inválida.\n\n¿Deseas reagendar?",
+                                RESCHEDULE_BUTTONS,
+                                """
+                                        Opción inválida.
 
-                        ¿Deseas reagendar?
-                        1. Sí
-                        2. No
-                        """.trim());
+                                        ¿Deseas reagendar?
+                                        1. Sí
+                                        2. No
+                                        """.trim()
+                        ),
+                        "Opción inválida. Pulsa Sí o No."
+                );
             }
         }
 
         if (selected == 2) {
             session.clearAfterCompletion();
-            return "Listo. Escribe *menú* cuando necesites algo más.";
+            return sendWithMenu(session.phone(), "Listo. Cuando necesites algo más, pulsa Menú.");
         }
 
         return startRescheduling(session);
@@ -527,7 +569,7 @@ public class ConversationService {
         List<LocalDate> dates = appointmentService.listAvailableDates();
         if (dates.isEmpty()) {
             session.reset();
-            return "No hay fechas disponibles para reagendar en este momento.\n\nEscribe *menú* para volver.";
+            return sendWithMenu(session.phone(), "No hay fechas disponibles para reagendar en este momento.");
         }
 
         session.knownPatientReady(session.cedula(), session.patientName(), dates);
@@ -557,11 +599,11 @@ public class ConversationService {
 
         if (!morning.isEmpty() && afternoon.isEmpty()) {
             session.timePeriodSelected(morning);
-            return header + formatTimeOptions(morning, "mañana", false);
+            return offerTimeOptions(session, morning, "mañana", false);
         }
         if (morning.isEmpty() && !afternoon.isEmpty()) {
             session.timePeriodSelected(afternoon);
-            return header + formatTimeOptions(afternoon, "tarde", false);
+            return offerTimeOptions(session, afternoon, "tarde", false);
         }
         return offerPeriodOptions(session.phone(), "", session.selectedDate(), morning, afternoon);
     }
@@ -582,7 +624,7 @@ public class ConversationService {
         ).trim();
     }
 
-    private String formatTimeOptions(List<LocalTime> times, String periodLabel, boolean offerBack) {
+    private String formatTimeOptions(List<LocalTime> times, String periodLabel) {
         StringBuilder builder = new StringBuilder("Horarios de la ")
                 .append(periodLabel)
                 .append(":\n\n");
@@ -593,10 +635,68 @@ public class ConversationService {
                     .append("\n");
         }
         builder.append("\nResponde con el número de la opción.");
-        if (offerBack) {
-            builder.append("\nEscribe *atrás* para cambiar de franja.");
-        }
         return builder.toString();
+    }
+
+    private String offerTimeOptions(
+            ConversationSession session,
+            List<LocalTime> times,
+            String periodLabel,
+            boolean offerBack
+    ) {
+        String header = "Fecha: " + session.selectedDate().format(DATE_FORMAT) + "\n\n";
+        String body = header + formatTimeOptions(times, periodLabel);
+        List<ReplyButton> buttons = offerBack ? BACK_AND_MENU_BUTTONS : MENU_ONLY_BUTTONS;
+        try {
+            whatsappMessageClient.sendTextMessage(session.phone(), body);
+            whatsappMessageClient.sendInteractiveButtons(
+                    session.phone(),
+                    offerBack
+                            ? "Elige el número de la hora, o pulsa Atrás / Menú."
+                            : "Elige el número de la hora, o pulsa Menú.",
+                    buttons
+            );
+            return null;
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to numbered time options to={}", session.phone(), exception);
+            return body + (offerBack ? "\nEscribe *atrás* para cambiar de franja." : "");
+        }
+    }
+
+    private String offerCancelOptions(String to, List<Appointment> appointments) {
+        StringBuilder builder = new StringBuilder("Estas son las citas encontradas:\n\n");
+        for (int index = 0; index < appointments.size(); index++) {
+            Appointment appointment = appointments.get(index);
+            builder.append(index + 1)
+                    .append(". ")
+                    .append(appointment.date().format(DATE_FORMAT))
+                    .append(" ")
+                    .append(appointment.time().format(TIME_FORMAT))
+                    .append(" - ")
+                    .append(appointment.patientName())
+                    .append(" (Consultorio ")
+                    .append(appointment.consultorio().name())
+                    .append(")\n");
+        }
+        builder.append("\nResponde con el número de la cita que deseas cancelar.");
+        String body = builder.toString();
+
+        if (appointments.size() <= 3) {
+            List<ReplyButton> buttons = new ArrayList<>();
+            for (int index = 0; index < appointments.size(); index++) {
+                Appointment appointment = appointments.get(index);
+                buttons.add(new ReplyButton(
+                        String.valueOf(index + 1),
+                        clip(appointment.date().format(DATE_FORMAT) + " "
+                                + appointment.time().format(TIME_FORMAT), 20)
+                ));
+            }
+            if (buttons.size() < 3) {
+                buttons.add(new ReplyButton("menu", "Menú"));
+            }
+            return sendWithButtons(to, body, buttons, body);
+        }
+        return sendWithMenu(to, body);
     }
 
     private List<LocalTime> morningTimes(List<LocalTime> times) {
@@ -628,6 +728,11 @@ public class ConversationService {
                     "Disponibles",
                     dateListRows(dates)
             );
+            whatsappMessageClient.sendInteractiveButtons(
+                    to,
+                    "Si prefieres otra opción, pulsa Menú.",
+                    MENU_ONLY_BUTTONS
+            );
             return null;
         } catch (RuntimeException exception) {
             log.warn("Falling back to numbered date options to={}", to, exception);
@@ -653,10 +758,7 @@ public class ConversationService {
             whatsappMessageClient.sendInteractiveButtons(
                     to,
                     body,
-                    List.of(
-                            new ReplyButton("1", "Mañana"),
-                            new ReplyButton("2", "Tarde")
-                    )
+                    PERIOD_BUTTONS
             );
             return null;
         } catch (RuntimeException exception) {

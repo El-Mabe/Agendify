@@ -245,7 +245,7 @@ public class AppointmentService {
 
         Set<LocalTime> available = new LinkedHashSet<>();
         for (Consultorio consultorio : Consultorio.values()) {
-            for (LocalTime slot : ClinicSchedule.slotsFor(consultorio)) {
+            for (LocalTime slot : ClinicSchedule.slotsFor(consultorio, date)) {
                 if (!appointmentRepository.existsSlot(date, slot, consultorio)) {
                     available.add(slot);
                 }
@@ -258,7 +258,7 @@ public class AppointmentService {
     private Consultorio chooseConsultorio(LocalDate date, LocalTime time) {
         List<Consultorio> candidates = new ArrayList<>();
         for (Consultorio consultorio : Consultorio.values()) {
-            if (ClinicSchedule.offers(consultorio, time)
+            if (ClinicSchedule.offers(consultorio, date, time)
                     && !appointmentRepository.existsSlot(date, time, consultorio)) {
                 candidates.add(consultorio);
             }

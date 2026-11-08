@@ -54,6 +54,8 @@ var COLUMN_WIDTHS = [100, 200, 150, 160, 220, 150];
 var BODY_FONT_SIZE = 11;
 var HEADER_FONT_SIZE = 12;
 var DAY_FONT_SIZE = 14;
+var ALMUERZO_BACKGROUND = '#E06666';
+var ALMUERZO_FONT = '#20124D';
 
 /**
  * Desplegable de ASISTENCIA. Vacío permitido; texto libre rechazado.
@@ -261,6 +263,7 @@ function applyVisualStyleToSheet_(sheet) {
       sheet.setRowHeight(headerRow, 28);
     }
   }
+  applyAlmuerzoStyleToSheet_(sheet);
 }
 
 function lightenHex_(hex, amount) {
@@ -378,7 +381,29 @@ function markSaturdayLunchB_(sheet) {
   if (updated > 0) {
     range.setValues(values);
   }
+  applyAlmuerzoStyleToSheet_(sheet);
   return updated;
+}
+
+function applyAlmuerzoStyleToSheet_(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 1) {
+    return;
+  }
+  var values = sheet.getRange(1, 1, lastRow, 2).getDisplayValues();
+  for (var i = 0; i < values.length; i++) {
+    var nombre = String(values[i][1] || '').trim().toUpperCase();
+    var row = sheet.getRange(i + 1, 1, 1, 6);
+    if (nombre === 'ALMUERZO') {
+      row.setBackground(ALMUERZO_BACKGROUND);
+      row.setFontColor(ALMUERZO_FONT);
+      row.setFontWeight('bold');
+    } else if (isBookableSlotRow_(values[i][0], values[i][1])) {
+      row.setBackground(null);
+      row.setFontColor('#000000');
+      row.setFontWeight('normal');
+    }
+  }
 }
 
 /**

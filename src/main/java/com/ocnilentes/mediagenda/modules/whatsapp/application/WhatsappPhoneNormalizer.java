@@ -10,11 +10,11 @@ public final class WhatsappPhoneNormalizer {
     private WhatsappPhoneNormalizer() {
     }
 
-    static boolean isMetaUserId(String value) {
+    public static boolean isMetaUserId(String value) {
         return StringUtils.hasText(value) && value.trim().matches("(?i)^[A-Z]{2}\\.[0-9]+$");
     }
 
-    static String normalize(String phone) {
+    public static String normalize(String phone) {
         if (!StringUtils.hasText(phone)) {
             return null;
         }
@@ -42,7 +42,7 @@ public final class WhatsappPhoneNormalizer {
         return digits;
     }
 
-    static boolean isLikelyPhone(String value) {
+    public static boolean isLikelyPhone(String value) {
         if (!StringUtils.hasText(value)) {
             return false;
         }

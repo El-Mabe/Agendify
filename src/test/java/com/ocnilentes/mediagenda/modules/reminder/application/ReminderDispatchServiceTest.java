@@ -204,6 +204,38 @@ class ReminderDispatchServiceTest {
     }
 
     @Test
+    void shouldSendReminderToMetaUserIdWithoutPhone() {
+        LocalDate tomorrow = LocalDate.now(ZONE).plusDays(1);
+        Appointment appointment = new Appointment(
+                "A|" + tomorrow + "|10:00",
+                tomorrow,
+                LocalTime.of(10, 0),
+                Consultorio.A,
+                "Julian",
+                "1006009961",
+                "CO.1358835849530155",
+                null,
+                12
+        );
+
+        when(appointmentService.listByDate(tomorrow)).thenReturn(List.of(appointment));
+        when(reminderRepository.findByAppointmentKeyAndChannel(appointment.id(), ReminderChannel.DAY_BEFORE))
+                .thenReturn(Optional.empty());
+        when(whatsappMessageClient.sendInteractiveButtons(anyString(), anyString(), anyList()))
+                .thenReturn("wamid.reminder");
+        when(reminderRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReminderDispatchService.ReminderRunResult result = service.dispatchDueReminders(true);
+
+        assertEquals(1, result.sent());
+        verify(whatsappMessageClient).sendInteractiveButtons(
+                eq("CO.1358835849530155"),
+                anyString(),
+                anyList()
+        );
+    }
+
+    @Test
     void shouldBuildConfirmAndCancelButtonIds() {
         assertTrue(ReminderPayloadFactory.isConfirm("rc|A|2026-08-22|10:00"));
         assertTrue(ReminderPayloadFactory.isCancel("rx|A|2026-08-22|10:00"));

@@ -186,6 +186,9 @@ public class ReminderDispatchService {
     }
 
     private static String destinationPhone(String rawPhone) {
+        if (WhatsappPhoneNormalizer.isMetaUserId(rawPhone)) {
+            return WhatsappPhoneNormalizer.normalize(rawPhone);
+        }
         if (!WhatsappPhoneNormalizer.isLikelyPhone(rawPhone)) {
             return null;
         }

@@ -5,6 +5,7 @@ import com.ocnilentes.mediagenda.modules.appointment.domain.exception.Appointmen
 import com.ocnilentes.mediagenda.modules.appointment.domain.model.Appointment;
 import com.ocnilentes.mediagenda.modules.information.application.ClinicInformationService;
 import com.ocnilentes.mediagenda.modules.patient.application.CedulaValidator;
+import com.ocnilentes.mediagenda.modules.patient.application.PatientNameValidator;
 import com.ocnilentes.mediagenda.modules.patient.application.PatientService;
 import com.ocnilentes.mediagenda.modules.patient.domain.exception.PatientException;
 import com.ocnilentes.mediagenda.modules.patient.domain.model.Patient;
@@ -306,7 +307,8 @@ public class ConversationService {
         }
 
         session.cedulaReceivedForNewPatient(cedula);
-        return "Gracias. No te tenemos registrado aún.\n\n¿Cuál es tu nombre y apellido?";
+        return "Gracias. No te tenemos registrado aún.\n\n"
+                + "¿Cuál es tu nombre y apellido? Solo letras, sin notas, máximo 40 caracteres.";
     }
 
     private String handleCancelCedula(ConversationSession session, String text) {
@@ -328,8 +330,11 @@ public class ConversationService {
     }
 
     private String handleName(ConversationSession session, String text) {
-        if (!StringUtils.hasText(text) || text.length() < 2) {
-            return rejectInvalid(session, "Por favor escribe tu nombre y apellido.");
+        String name;
+        try {
+            name = PatientNameValidator.normalizeAndValidate(text);
+        } catch (PatientException exception) {
+            return rejectInvalid(session, exception.getMessage());
         }
 
         List<LocalDate> dates = appointmentService.listAvailableDates();
@@ -338,9 +343,9 @@ public class ConversationService {
             return sendWithMenu(session.phone(), "No hay fechas disponibles en este momento.");
         }
 
-        patientService.registerOrUpdate(session.cedula(), text, session.phone());
-        session.nameReceived(text, dates);
-        return offerDateOptions(session.phone(), "Gracias, " + text + ".\n\n", dates);
+        patientService.registerOrUpdate(session.cedula(), name, session.phone());
+        session.nameReceived(name, dates);
+        return offerDateOptions(session.phone(), "Gracias, " + name + ".\n\n", dates);
     }
 
     private String handleDateSelection(ConversationSession session, String text) {

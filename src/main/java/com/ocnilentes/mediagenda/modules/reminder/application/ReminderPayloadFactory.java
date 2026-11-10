@@ -1,6 +1,7 @@
 package com.ocnilentes.mediagenda.modules.reminder.application;
 
 import com.ocnilentes.mediagenda.modules.appointment.domain.model.Appointment;
+import com.ocnilentes.mediagenda.modules.patient.application.PatientNameValidator;
 import com.ocnilentes.mediagenda.modules.reminder.domain.model.ReminderChannel;
 import com.ocnilentes.mediagenda.modules.whatsapp.domain.model.ReplyButton;
 import java.time.LocalDate;
@@ -112,9 +113,6 @@ public final class ReminderPayloadFactory {
     }
 
     private static String patientName(Appointment appointment) {
-        if (appointment.patientName() == null || appointment.patientName().isBlank()) {
-            return "paciente";
-        }
-        return appointment.patientName();
+        return PatientNameValidator.forReminder(appointment.patientName());
     }
 }

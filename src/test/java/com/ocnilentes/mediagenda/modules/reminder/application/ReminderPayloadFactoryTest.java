@@ -50,4 +50,24 @@ class ReminderPayloadFactoryTest {
                 ReminderPayloadFactory.templateBodyParameters(appointment)
         );
     }
+
+    @Test
+    void shouldUseAtMostTwoWordsAsTemplateName() {
+        Appointment appointment = new Appointment(
+                "id",
+                LocalDate.of(2026, 11, 7),
+                LocalTime.of(9, 0),
+                Consultorio.A,
+                "Rubby Liliana Velasco Mayor (referida Angelli Gómez)",
+                "1234567890",
+                "573000000001",
+                null,
+                null
+        );
+        assertEquals(
+                List.of("Rubby Liliana", "sábado 7 de noviembre", "9:00 a. m."),
+                ReminderPayloadFactory.templateBodyParameters(appointment)
+        );
+        assertTrue(ReminderPayloadFactory.buildBody(appointment).contains("Hola, Rubby Liliana 😊"));
+    }
 }
